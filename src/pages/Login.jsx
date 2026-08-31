@@ -1,8 +1,22 @@
 import { useState } from 'react'
 import { supabase } from '../lib/supabase'
 
+const BRAND = '#B5E000'
+const DARK  = '#0a0a0a'
+
+function ZZLogo() {
+  return (
+    <svg width="64" height="64" viewBox="0 0 64 64">
+      <rect width="64" height="64" rx="12" fill={BRAND}/>
+      <text x="32" y="47" textAnchor="middle"
+        fontFamily="Arial Black, Impact, sans-serif"
+        fontWeight="900" fontSize="34" fill={DARK}>ZZ</text>
+    </svg>
+  )
+}
+
 export default function Login({ onLogin }) {
-  const [mode,     setMode]     = useState('login') // 'login' | 'reset'
+  const [mode,     setMode]     = useState('login')
   const [email,    setEmail]    = useState('')
   const [password, setPassword] = useState('')
   const [loading,  setLoading]  = useState(false)
@@ -27,28 +41,28 @@ export default function Login({ onLogin }) {
       redirectTo: `${window.location.origin}/reset-password`,
     })
     setLoading(false)
-    if (error) setError('No se pudo enviar el mail. Verificá el email.')
+    if (error) setError(error.message)
     else setSuccess('Te enviamos un mail para restablecer tu contraseña.')
   }
 
   return (
     <div className="min-h-screen flex items-center justify-center"
-      style={{ background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 60%, #0f172a 100%)' }}>
+      style={{ background: `linear-gradient(135deg, ${DARK} 0%, #111 60%, ${DARK} 100%)` }}>
 
-      {/* CARD */}
-      <div className="w-full max-w-sm">
+      <div className="w-full max-w-sm px-4">
 
         {/* Logo */}
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl font-black text-3xl mb-4 shadow-lg"
-            style={{ background: '#8BC34A', color: '#0f172a' }}>
-            Z
+          <div className="flex justify-center mb-4">
+            <ZZLogo />
           </div>
-          <div className="text-white font-bold text-xl">Grupo Randazzo</div>
-          <div className="text-sm mt-1" style={{ color: '#8BC34A' }}>Marketing Dashboard</div>
+          <div className="text-white font-black text-2xl tracking-tight">GRUPO RANDAZZO</div>
+          <div className="text-sm font-medium mt-1" style={{ color: BRAND }}>
+            Marketing Dashboard
+          </div>
         </div>
 
-        {/* FORM CARD */}
+        {/* Card */}
         <div className="bg-white rounded-2xl shadow-2xl p-8">
 
           {mode === 'login' ? (
@@ -56,52 +70,49 @@ export default function Login({ onLogin }) {
               <h2 className="font-bold text-gray-800 text-xl mb-6">Iniciar sesión</h2>
 
               {error && (
-                <div className="bg-red-50 border border-red-200 text-red-600 text-sm rounded-lg px-4 py-3 mb-4">
+                <div className="bg-red-50 border border-red-200 text-red-600 text-sm
+                  rounded-lg px-4 py-3 mb-4">
                   {error}
                 </div>
               )}
 
               <form onSubmit={handleLogin} className="space-y-4">
                 <div>
-                  <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">
+                  <label className="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-1.5">
                     Email
                   </label>
                   <input
-                    type="email"
-                    value={email}
-                    onChange={e => setEmail(e.target.value)}
-                    placeholder="tu@gruporandazzo.com.ar"
-                    required
+                    type="email" value={email} onChange={e => setEmail(e.target.value)}
+                    placeholder="tu@gruporandazzo.com.ar" required
                     className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm
-                      focus:outline-none focus:border-[#8BC34A] focus:ring-2 focus:ring-[#8BC34A]/20
-                      transition-all placeholder-gray-300"
+                      focus:outline-none transition-all placeholder-gray-300"
+                    style={{ '--tw-ring-color': BRAND }}
+                    onFocus={e => e.target.style.borderColor = BRAND}
+                    onBlur={e => e.target.style.borderColor = '#e5e7eb'}
                   />
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">
+                  <label className="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-1.5">
                     Contraseña
                   </label>
                   <input
-                    type="password"
-                    value={password}
-                    onChange={e => setPassword(e.target.value)}
-                    placeholder="••••••••"
-                    required
+                    type="password" value={password} onChange={e => setPassword(e.target.value)}
+                    placeholder="••••••••" required
                     className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm
-                      focus:outline-none focus:border-[#8BC34A] focus:ring-2 focus:ring-[#8BC34A]/20
-                      transition-all placeholder-gray-300"
+                      focus:outline-none transition-all placeholder-gray-300"
+                    onFocus={e => e.target.style.borderColor = BRAND}
+                    onBlur={e => e.target.style.borderColor = '#e5e7eb'}
                   />
                 </div>
 
                 <button
-                  type="submit"
-                  disabled={loading}
-                  className="w-full py-3 rounded-xl font-bold text-sm transition-all
-                    disabled:opacity-60 disabled:cursor-not-allowed mt-2"
-                  style={{ background: '#8BC34A', color: '#0f172a' }}
+                  type="submit" disabled={loading}
+                  className="w-full py-3 rounded-xl font-black text-sm transition-all
+                    disabled:opacity-60 mt-2 tracking-wide"
+                  style={{ background: BRAND, color: DARK }}
                 >
-                  {loading ? 'Ingresando...' : 'Ingresar'}
+                  {loading ? 'Ingresando...' : 'INGRESAR'}
                 </button>
               </form>
 
@@ -117,7 +128,7 @@ export default function Login({ onLogin }) {
             <>
               <button
                 onClick={() => { setMode('login'); setError(''); setSuccess('') }}
-                className="flex items-center gap-1 text-gray-400 hover:text-gray-600 text-sm mb-5 transition-colors"
+                className="flex items-center gap-1 text-gray-400 hover:text-gray-600 text-sm mb-5"
               >
                 ← Volver
               </button>
@@ -127,42 +138,28 @@ export default function Login({ onLogin }) {
                 Ingresá tu email y te mandamos un link para crear una nueva contraseña.
               </p>
 
-              {error && (
-                <div className="bg-red-50 border border-red-200 text-red-600 text-sm rounded-lg px-4 py-3 mb-4">
-                  {error}
-                </div>
-              )}
-
+              {error   && <div className="bg-red-50 border border-red-200 text-red-600 text-sm rounded-lg px-4 py-3 mb-4">{error}</div>}
               {success ? (
-                <div className="bg-green-50 border border-green-200 text-green-700 text-sm rounded-lg px-4 py-4 text-center">
-                  <div className="text-2xl mb-2">✅</div>
-                  <div className="font-semibold">{success}</div>
-                  <div className="text-xs text-green-600 mt-1">Revisá tu bandeja de entrada.</div>
+                <div className="border text-sm rounded-lg px-4 py-4 text-center"
+                  style={{ background: '#f0ffd0', borderColor: BRAND, color: '#3a5200' }}>
+                  <div className="font-bold mb-1">Mail enviado</div>
+                  <div className="text-xs">{success}</div>
                 </div>
               ) : (
                 <form onSubmit={handleReset} className="space-y-4">
-                  <div>
-                    <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">
-                      Email
-                    </label>
-                    <input
-                      type="email"
-                      value={email}
-                      onChange={e => setEmail(e.target.value)}
-                      placeholder="tu@gruporandazzo.com.ar"
-                      required
-                      className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm
-                        focus:outline-none focus:border-[#8BC34A] focus:ring-2 focus:ring-[#8BC34A]/20
-                        transition-all placeholder-gray-300"
-                    />
-                  </div>
+                  <input
+                    type="email" value={email} onChange={e => setEmail(e.target.value)}
+                    placeholder="tu@gruporandazzo.com.ar" required
+                    className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none"
+                    onFocus={e => e.target.style.borderColor = BRAND}
+                    onBlur={e => e.target.style.borderColor = '#e5e7eb'}
+                  />
                   <button
-                    type="submit"
-                    disabled={loading}
-                    className="w-full py-3 rounded-xl font-bold text-sm transition-all disabled:opacity-60"
-                    style={{ background: '#8BC34A', color: '#0f172a' }}
+                    type="submit" disabled={loading}
+                    className="w-full py-3 rounded-xl font-black text-sm disabled:opacity-60"
+                    style={{ background: BRAND, color: DARK }}
                   >
-                    {loading ? 'Enviando...' : 'Enviar link'}
+                    {loading ? 'Enviando...' : 'ENVIAR LINK'}
                   </button>
                 </form>
               )}
@@ -170,7 +167,7 @@ export default function Login({ onLogin }) {
           )}
         </div>
 
-        <div className="text-center mt-6 text-gray-600 text-xs">
+        <div className="text-center mt-5 text-gray-600 text-xs">
           ¿No tenés acceso? Contactá al administrador.
         </div>
       </div>
