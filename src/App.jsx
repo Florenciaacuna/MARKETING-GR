@@ -7,20 +7,8 @@ import Campanas      from './pages/Campanas'
 import Leads         from './pages/Leads'
 import Carga         from './pages/Carga'
 
-// ── Icono ZZ SVG inline ──────────────────────────────────
-function ZZLogo({ size = 36, className = '' }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 64 64" className={className}>
-      <rect width="64" height="64" rx="10" fill="#B5E000"/>
-      <text x="32" y="47" textAnchor="middle"
-        fontFamily="Arial Black, Impact, sans-serif"
-        fontWeight="900" fontSize="34" fill="#0a0a0a">ZZ</text>
-    </svg>
-  )
-}
-
 const NAV = [
-  { id: 'dashboard', label: 'Dashboard',  icon: (
+  { id: 'dashboard', label: 'Dashboard', icon: (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4">
       <rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/>
       <rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/>
@@ -31,14 +19,14 @@ const NAV = [
       <circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/>
     </svg>
   )},
-  { id: 'leads',    label: 'Leads',    icon: (
+  { id: 'leads', label: 'Leads', icon: (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4">
       <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
       <circle cx="9" cy="7" r="4"/>
       <path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>
     </svg>
   )},
-  { id: 'carga',    label: 'Carga',    icon: (
+  { id: 'carga', label: 'Carga', icon: (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4">
       <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
       <polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
@@ -66,7 +54,7 @@ export default function App() {
 
   if (session === undefined) return (
     <div className="min-h-screen flex items-center justify-center" style={{ background: DARK }}>
-      <ZZLogo size={48} className="animate-pulse" />
+      <img src="/logo.png" alt="Grupo Randazzo" className="h-12 w-auto animate-pulse" />
     </div>
   )
 
@@ -83,14 +71,11 @@ export default function App() {
       {/* SIDEBAR */}
       <aside className="w-56 flex-shrink-0 flex flex-col" style={{ background: DARK }}>
 
-        {/* Logo */}
-        <div className="px-5 py-5 border-b border-white/10">
-          <div className="flex items-center gap-3">
-            <ZZLogo size={36} />
-            <div>
-              <div className="text-white font-bold text-sm leading-tight">Grupo Randazzo</div>
-              <div className="text-xs font-medium" style={{ color: BRAND }}>Marketing</div>
-            </div>
+        {/* Logo real */}
+        <div className="px-5 py-4 border-b border-white/10">
+          <img src="/logo.png" alt="Grupo Randazzo" className="h-10 w-auto" />
+          <div className="text-xs font-semibold mt-2" style={{ color: BRAND }}>
+            Marketing Dashboard
           </div>
         </div>
 
