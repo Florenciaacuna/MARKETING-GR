@@ -4,17 +4,6 @@ import { supabase } from '../lib/supabase'
 const BRAND = '#B5E000'
 const DARK  = '#0a0a0a'
 
-function ZZLogo() {
-  return (
-    <svg width="64" height="64" viewBox="0 0 64 64">
-      <rect width="64" height="64" rx="12" fill={BRAND}/>
-      <text x="32" y="47" textAnchor="middle"
-        fontFamily="Arial Black, Impact, sans-serif"
-        fontWeight="900" fontSize="34" fill={DARK}>ZZ</text>
-    </svg>
-  )
-}
-
 export default function Login({ onLogin }) {
   const [mode,     setMode]     = useState('login')
   const [email,    setEmail]    = useState('')
@@ -51,13 +40,12 @@ export default function Login({ onLogin }) {
 
       <div className="w-full max-w-sm px-4">
 
-        {/* Logo */}
+        {/* Logo real */}
         <div className="text-center mb-8">
           <div className="flex justify-center mb-4">
-            <ZZLogo />
+            <img src="/logo.png" alt="Grupo Randazzo" className="h-16 w-auto" />
           </div>
-          <div className="text-white font-black text-2xl tracking-tight">GRUPO RANDAZZO</div>
-          <div className="text-sm font-medium mt-1" style={{ color: BRAND }}>
+          <div className="text-sm font-semibold mt-2" style={{ color: BRAND }}>
             Marketing Dashboard
           </div>
         </div>
@@ -86,12 +74,10 @@ export default function Login({ onLogin }) {
                     placeholder="tu@gruporandazzo.com.ar" required
                     className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm
                       focus:outline-none transition-all placeholder-gray-300"
-                    style={{ '--tw-ring-color': BRAND }}
                     onFocus={e => e.target.style.borderColor = BRAND}
                     onBlur={e => e.target.style.borderColor = '#e5e7eb'}
                   />
                 </div>
-
                 <div>
                   <label className="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-1.5">
                     Contraseña
@@ -105,7 +91,6 @@ export default function Login({ onLogin }) {
                     onBlur={e => e.target.style.borderColor = '#e5e7eb'}
                   />
                 </div>
-
                 <button
                   type="submit" disabled={loading}
                   className="w-full py-3 rounded-xl font-black text-sm transition-all
@@ -132,13 +117,15 @@ export default function Login({ onLogin }) {
               >
                 ← Volver
               </button>
-
               <h2 className="font-bold text-gray-800 text-xl mb-2">Restablecer contraseña</h2>
               <p className="text-gray-400 text-sm mb-6">
                 Ingresá tu email y te mandamos un link para crear una nueva contraseña.
               </p>
-
-              {error   && <div className="bg-red-50 border border-red-200 text-red-600 text-sm rounded-lg px-4 py-3 mb-4">{error}</div>}
+              {error && (
+                <div className="bg-red-50 border border-red-200 text-red-600 text-sm rounded-lg px-4 py-3 mb-4">
+                  {error}
+                </div>
+              )}
               {success ? (
                 <div className="border text-sm rounded-lg px-4 py-4 text-center"
                   style={{ background: '#f0ffd0', borderColor: BRAND, color: '#3a5200' }}>
