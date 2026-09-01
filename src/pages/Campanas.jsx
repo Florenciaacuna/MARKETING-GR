@@ -1,307 +1,138 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { supabase } from '../lib/supabase'
-import { parseFile, normalizeDNI } from '../lib/parsers'
+import { parseFile } from '../lib/parsers'
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid,
   Tooltip, Legend, ResponsiveContainer
 } from 'recharts'
 
-// ── HELPERS ───────────────────────────────────────────────
+const BRAND  = '#B5E000'
+const MARCAS = ['TODAS', 'KIARA', 'CIARA', 'PEARA', 'MOVILIS', 'SALRA']
+const CANALES = ['Facebook', 'Google Ads', 'Instagram', 'Darwin', 'Chery',
+                 'CompramosTuAuto', 'Mercado Libre', 'WhatsApp', 'Presencial', 'Otro']
+
 const fmt = n => n == null ? '—' : new Intl.NumberFormat('es-AR', {
   style: 'currency', currency: 'ARS', maximumFractionDigits: 0
 }).format(n)
 
-const fmtROI = r => r == null ? '—'
-  : <span className={r >= 0 ? 'text-green-600 font-bold' : 'text-red-500 font-bold'}>
-      {r >= 0 ? '+' : ''}{r}%
-    </span>
+const customTooltip = ({ active, payload, label }) => {
+  if (!active || !payload?.length) return null
+  return (
+    <div className="rounded-lg px-3 py-2 text-xs border" style={{ background:'#1a1a1a', borderColor:'#2a2a2a', color:'#d1d5db' }}>
+      <div className="font-bold text-white mb-1">{label}</div>
+      {payload.map((p,i) => <div key={i} style={{color:p.color}}>{p.name}: {fmt(p.value)}</div>)}
+    </div>
+  )
+}
 
-const MARCAS  = ['TODAS', 'KIARA', 'CIARA', 'PEARA', 'MOVILIS', 'SALRA']
-const CANALES = ['Facebook', 'Google Ads', 'Instagram', 'Darwin', 'Chery', 'CompramosTuAuto',
-                 'Mercado Libre', 'WhatsApp', 'Presencial', 'Otro']
-
-// ── INLINE EDITABLE CELL ──────────────────────────────────
-function EditCell({ value, onSave, type = 'text', options = [] }) {
+// ── CELDA EDITABLE ───────────────────────────────────────
+function EditCell({ value, onSave, options = [], type = 'text' }) {
   const [editing, setEditing] = useState(false)
-  const [val, setVal]         = useState(value ?? '')
-  const ref = useRef()
-
-  const commit = () => {
-    setEditing(false)
-    if (val !== (value ?? '')) onSave(val === '' ? null : val)
-  }
-
+  const [val, setVal] = useState(value ?? '')
+  const commit = () => { setEditing(false); if (val !== (value ?? '')) onSave(val || null) }
   if (editing) {
     if (options.length) return (
-      <select
-        autoFocus
-        value={val}
-        onChange={e => setVal(e.target.value)}
-        onBlur={commit}
-        className="w-full border border-[#8BC34A] rounded px-1 py-0.5 text-sm"
-      >
+      <select autoFocus value={val} onChange={e => setVal(e.target.value)} onBlur={commit}
+        className="w-full text-xs" style={{ background:'#111', border:'1px solid #B5E000', borderRadius:4, color:'white', padding:'2px 6px' }}>
         {options.map(o => <option key={o} value={o}>{o}</option>)}
       </select>
     )
     return (
-      <input
-        ref={ref}
-        autoFocus
-        type={type}
-        value={val}
+      <input autoFocus type={type} value={val}
         onChange={e => setVal(e.target.value)}
         onBlur={commit}
-        onKeyDown={e => { if (e.key === 'Enter') commit(); if (e.key === 'Escape') setEditing(false) }}
-        className="w-full border border-[#8BC34A] rounded px-1 py-0.5 text-sm"
+        onKeyDown={e => { if (e.key==='Enter') commit(); if (e.key==='Escape') setEditing(false) }}
+        className="w-full text-xs" style={{ background:'#111', border:'1px solid #B5E000', borderRadius:4, color:'white', padding:'2px 6px' }}
       />
     )
   }
-
   return (
-    <span
-      onClick={() => { setVal(value ?? ''); setEditing(true) }}
-      className="cursor-pointer px-1.5 py-0.5 rounded hover:bg-green-50 block min-h-[1.5rem]"
-      title="Clic para editar"
-    >
-      {value ?? <span className="text-gray-300 italic text-xs">—</span>}
+    <span onClick={() => { setVal(value ?? ''); setEditing(true) }}
+      className="block cursor-pointer rounded px-1.5 py-0.5 min-h-[1.5rem] text-xs hover:bg-white/5 transition-colors"
+      title="Clic para editar">
+      {value ?? <span className="text-gray-600 italic">—</span>}
     </span>
   )
 }
 
-// ── MODAL NUEVA CAMPAÑA ───────────────────────────────────
+// ── MODAL NUEVA CAMPAÑA ──────────────────────────────────
 function NuevaCampanaModal({ onClose, onSaved }) {
-  const [form, setForm] = useState({
-    codigo: '', nombre: '', marca: 'TODAS', canal: '',
-    presupuesto: 0, fecha_inicio: '', fecha_fin: '', notas: ''
-  })
+  const [form, setForm] = useState({ codigo:'', nombre:'', marca:'TODAS', canal:'', presupuesto:0, fecha_inicio:'', fecha_fin:'' })
   const [saving, setSaving] = useState(false)
+  const set = (k, v) => setForm(p => ({ ...p, [k]: v }))
 
   const save = async () => {
     if (!form.nombre.trim()) { alert('El nombre es obligatorio'); return }
     setSaving(true)
-    const { error } = await supabase.from('mkt_campanas').insert({
-      ...form,
-      presupuesto: parseFloat(form.presupuesto) || 0,
-      fecha_inicio: form.fecha_inicio || null,
-      fecha_fin:    form.fecha_fin    || null,
-    })
-    setSaving(false)
-    if (error) alert(error.message)
-    else { onSaved(); onClose() }
+    await supabase.from('mkt_campanas').insert({ ...form, presupuesto: parseFloat(form.presupuesto)||0 })
+    setSaving(false); onSaved(); onClose()
   }
 
-  const Field = ({ label, children }) => (
-    <label className="block">
-      <span className="text-xs font-medium text-gray-600">{label}</span>
-      <div className="mt-1">{children}</div>
-    </label>
-  )
-
-  const Input = ({ field, ...props }) => (
-    <input
-      {...props}
-      value={form[field]}
-      onChange={e => setForm(p => ({ ...p, [field]: e.target.value }))}
-      className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#8BC34A]"
-    />
-  )
-
   return (
-    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg">
-        <div className="p-5 border-b">
-          <h2 className="font-bold text-gray-800 text-lg">Nueva campaña</h2>
+    <div className="fixed inset-0 flex items-center justify-center z-50 p-4" style={{ background:'rgba(0,0,0,0.7)' }}>
+      <div className="w-full max-w-lg rounded-2xl border" style={{ background:'#1a1a1a', borderColor:'#2a2a2a' }}>
+        <div className="p-5 border-b flex items-center justify-between" style={{ borderColor:'#2a2a2a' }}>
+          <h2 className="font-bold text-white">Nueva campaña</h2>
+          <button onClick={onClose} className="text-gray-500 hover:text-white">✕</button>
         </div>
-        <div className="p-5 grid grid-cols-2 gap-4">
-          <Field label="Código (ej: fl2, cug)">
-            <Input field="codigo" placeholder="fl2" />
-          </Field>
-          <Field label="Nombre *">
-            <Input field="nombre" placeholder="GOLAZZO" />
-          </Field>
-          <Field label="Marca">
-            <select
-              value={form.marca}
-              onChange={e => setForm(p => ({ ...p, marca: e.target.value }))}
-              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm"
-            >
+        <div className="p-5 grid grid-cols-2 gap-3">
+          {[
+            { label:'Código (ej: fl2)', key:'codigo', ph:'fl2' },
+            { label:'Nombre *', key:'nombre', ph:'GOLAZZO' },
+          ].map(f => (
+            <label key={f.key} className="block">
+              <span className="text-xs font-bold text-gray-500 uppercase tracking-wide">{f.label}</span>
+              <input value={form[f.key]} onChange={e => set(f.key, e.target.value)}
+                placeholder={f.ph} className="input-dark mt-1" />
+            </label>
+          ))}
+          <label className="block">
+            <span className="text-xs font-bold text-gray-500 uppercase tracking-wide">Marca</span>
+            <select value={form.marca} onChange={e => set('marca', e.target.value)} className="input-dark mt-1">
               {MARCAS.map(m => <option key={m}>{m}</option>)}
             </select>
-          </Field>
-          <Field label="Canal">
-            <select
-              value={form.canal}
-              onChange={e => setForm(p => ({ ...p, canal: e.target.value }))}
-              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm"
-            >
+          </label>
+          <label className="block">
+            <span className="text-xs font-bold text-gray-500 uppercase tracking-wide">Canal</span>
+            <select value={form.canal} onChange={e => set('canal', e.target.value)} className="input-dark mt-1">
               <option value="">Seleccionar...</option>
               {CANALES.map(c => <option key={c}>{c}</option>)}
             </select>
-          </Field>
-          <Field label="Presupuesto ($)">
-            <Input field="presupuesto" type="number" placeholder="0" />
-          </Field>
-          <Field label="Fecha inicio">
-            <Input field="fecha_inicio" type="date" />
-          </Field>
-          <Field label="Fecha fin">
-            <Input field="fecha_fin" type="date" />
-          </Field>
-          <Field label="Notas">
-            <Input field="notas" placeholder="Observaciones..." />
-          </Field>
+          </label>
+          <label className="block">
+            <span className="text-xs font-bold text-gray-500 uppercase tracking-wide">Presupuesto ($)</span>
+            <input type="number" value={form.presupuesto} onChange={e => set('presupuesto', e.target.value)} className="input-dark mt-1" />
+          </label>
+          <label className="block">
+            <span className="text-xs font-bold text-gray-500 uppercase tracking-wide">Fecha inicio</span>
+            <input type="date" value={form.fecha_inicio} onChange={e => set('fecha_inicio', e.target.value)} className="input-dark mt-1" />
+          </label>
+          <label className="block">
+            <span className="text-xs font-bold text-gray-500 uppercase tracking-wide">Fecha fin</span>
+            <input type="date" value={form.fecha_fin} onChange={e => set('fecha_fin', e.target.value)} className="input-dark mt-1" />
+          </label>
         </div>
-        <div className="p-5 border-t flex justify-end gap-3">
-          <button onClick={onClose} className="px-4 py-2 border border-gray-200 rounded-lg text-sm hover:bg-gray-50">
-            Cancelar
-          </button>
-          <button
-            onClick={save}
-            disabled={saving}
-            className="px-5 py-2 bg-[#8BC34A] text-white rounded-lg text-sm font-semibold hover:bg-[#7CB342] disabled:opacity-50"
-          >
-            {saving ? 'Guardando...' : 'Guardar campaña'}
-          </button>
+        <div className="p-5 border-t flex justify-end gap-3" style={{ borderColor:'#2a2a2a' }}>
+          <button onClick={onClose} className="btn-ghost">Cancelar</button>
+          <button onClick={save} disabled={saving} className="btn-primary">{saving ? 'Guardando...' : 'Guardar'}</button>
         </div>
       </div>
     </div>
   )
 }
 
-// ── MODAL GASTOS ──────────────────────────────────────────
-function GastosModal({ campana, onClose, onSaved }) {
-  const [gastos, setGastos]     = useState([])
-  const [importing, setImporting] = useState(false)
-  const [newGasto, setNewGasto]  = useState({ concepto: '', monto: '', fecha: '', proveedor: '' })
-  const fileRef = useRef()
-
-  useEffect(() => {
-    supabase.from('mkt_gastos').select('*').eq('campana_id', campana.id)
-      .order('fecha').then(({ data }) => setGastos(data || []))
-  }, [campana.id])
-
-  const addGasto = async () => {
-    if (!newGasto.monto) return
-    const { data } = await supabase.from('mkt_gastos').insert({
-      campana_id: campana.id,
-      concepto:   newGasto.concepto || null,
-      monto:      parseFloat(newGasto.monto),
-      fecha:      newGasto.fecha    || null,
-      proveedor:  newGasto.proveedor || null,
-    }).select().single()
-    setGastos(p => [...p, data])
-    setNewGasto({ concepto: '', monto: '', fecha: '', proveedor: '' })
-    onSaved()
-  }
-
-  const deleteGasto = async (id) => {
-    await supabase.from('mkt_gastos').delete().eq('id', id)
-    setGastos(p => p.filter(g => g.id !== id))
-    onSaved()
-  }
-
-  const importExcel = async (e) => {
-    const file = e.target.files[0]
-    if (!file) return
-    setImporting(true)
-    const { data } = await parseFile(file)
-    const rows = data.map(r => ({
-      campana_id: campana.id,
-      concepto:   r['Concepto'] || r['CONCEPTO'] || r['concepto'] || null,
-      monto:      parseFloat(r['Monto'] || r['MONTO'] || r['monto'] || 0),
-      fecha:      r['Fecha'] || r['FECHA'] || r['fecha'] || null,
-      proveedor:  r['Proveedor'] || r['PROVEEDOR'] || r['proveedor'] || null,
-    })).filter(r => r.monto > 0)
-
-    if (rows.length > 0) {
-      await supabase.from('mkt_gastos').insert(rows)
-      const { data: updated } = await supabase.from('mkt_gastos').select('*').eq('campana_id', campana.id)
-      setGastos(updated || [])
-      onSaved()
-    }
-    setImporting(false)
-  }
-
-  const total = gastos.reduce((s, g) => s + (g.monto || 0), 0)
-
-  return (
-    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col">
-        <div className="p-5 border-b flex items-center justify-between">
-          <div>
-            <h2 className="font-bold text-gray-800">Gastos — {campana.nombre}</h2>
-            <div className="text-sm text-gray-500 mt-0.5">Total: {fmt(total)}</div>
-          </div>
-          <div className="flex gap-2">
-            <input ref={fileRef} type="file" accept=".xls,.xlsx,.csv" className="hidden" onChange={importExcel} />
-            <button
-              onClick={() => fileRef.current.click()}
-              className="px-3 py-1.5 border border-gray-200 rounded-lg text-xs hover:bg-gray-50"
-            >
-              {importing ? '⏳ Importando...' : '📥 Importar Excel'}
-            </button>
-          </div>
-        </div>
-
-        <div className="flex-1 overflow-y-auto p-5 space-y-2">
-          {gastos.map(g => (
-            <div key={g.id} className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
-              <div className="flex-1">
-                <div className="font-medium text-sm">{g.concepto || '—'}</div>
-                <div className="text-xs text-gray-500">{g.proveedor} {g.fecha ? `· ${g.fecha}` : ''}</div>
-              </div>
-              <div className="font-bold text-sm">{fmt(g.monto)}</div>
-              <button onClick={() => deleteGasto(g.id)} className="text-red-400 hover:text-red-600 text-xs px-2">✕</button>
-            </div>
-          ))}
-          {gastos.length === 0 && (
-            <div className="text-center py-8 text-gray-400 text-sm">Sin gastos registrados</div>
-          )}
-        </div>
-
-        {/* Nuevo gasto */}
-        <div className="p-5 border-t bg-gray-50 rounded-b-2xl">
-          <div className="text-xs font-semibold text-gray-600 mb-2">Agregar gasto</div>
-          <div className="grid grid-cols-4 gap-2">
-            {[
-              { key: 'concepto',  ph: 'Concepto' },
-              { key: 'proveedor', ph: 'Proveedor' },
-              { key: 'fecha',     ph: 'Fecha',    type: 'date' },
-              { key: 'monto',     ph: 'Monto $',  type: 'number' },
-            ].map(f => (
-              <input
-                key={f.key}
-                type={f.type || 'text'}
-                placeholder={f.ph}
-                value={newGasto[f.key]}
-                onChange={e => setNewGasto(p => ({ ...p, [f.key]: e.target.value }))}
-                className="border border-gray-200 rounded-lg px-2 py-1.5 text-sm"
-              />
-            ))}
-          </div>
-          <div className="flex justify-between mt-3">
-            <button onClick={onClose} className="px-4 py-2 border border-gray-200 rounded-lg text-sm hover:bg-white">
-              Cerrar
-            </button>
-            <button
-              onClick={addGasto}
-              className="px-4 py-2 bg-[#8BC34A] text-white rounded-lg text-sm font-semibold hover:bg-[#7CB342]"
-            >
-              + Agregar
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-// ── MAIN CAMPANAS PAGE ────────────────────────────────────
+// ── MAIN ─────────────────────────────────────────────────
 export default function Campanas() {
-  const [performance, setPerformance] = useState([])
-  const [loading, setLoading]         = useState(true)
-  const [showModal, setShowModal]     = useState(false)
-  const [gastosFor, setGastosFor]     = useState(null)
+  const [perf,       setPerf]       = useState([])
+  const [loading,    setLoading]    = useState(true)
+  const [showModal,  setShowModal]  = useState(false)
+  const [activeTab,  setActiveTab]  = useState('performance') // 'performance' | 'gastos' | 'registro'
+
+  // Upload gastos
+  const fileRef    = useRef()
+  const [fileGasto, setFileGasto]  = useState(null)
+  const [uploading,  setUploading] = useState(false)
+  const [uploadMsg,  setUploadMsg] = useState('')
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -309,215 +140,372 @@ export default function Campanas() {
       .from('mkt_campanas_performance')
       .select('*')
       .order('gasto_total', { ascending: false })
-    setPerformance(data || [])
+    setPerf(data || [])
     setLoading(false)
   }, [])
 
   useEffect(() => { load() }, [load])
 
-  async function updateField(id, field, value) {
-    await supabase.from('mkt_campanas').update({ [field]: value, updated_at: new Date() }).eq('id', id)
-    setPerformance(prev => prev.map(c => c.id === id ? { ...c, [field]: value } : c))
+  const update = async (id, field, value) => {
+    await supabase.from('mkt_campanas').update({ [field]: value }).eq('id', id)
+    setPerf(prev => prev.map(c => c.id === id ? { ...c, [field]: value } : c))
+  }
+
+  // Importar Excel de gastos
+  async function importarGastos() {
+    if (!fileGasto) return
+    setUploading(true); setUploadMsg('')
+    const { data: rows } = await parseFile(fileGasto)
+
+    // Intentar mapear columnas flexiblemente
+    const gastos = rows.map(r => {
+      const campana_nombre = r['Campaña'] || r['CAMPAÑA'] || r['Campaign'] || r['campana'] || null
+      const monto   = parseFloat(r['Monto'] || r['MONTO'] || r['monto'] || r['Importe'] || r['IMPORTE'] || 0)
+      const concepto = r['Concepto'] || r['CONCEPTO'] || r['Descripción'] || r['descripcion'] || null
+      const fecha   = r['Fecha'] || r['FECHA'] || r['fecha'] || null
+      const proveedor = r['Proveedor'] || r['PROVEEDOR'] || r['proveedor'] || null
+      return { campana_nombre, monto, concepto, fecha, proveedor }
+    }).filter(g => g.monto > 0)
+
+    // Buscar campañas por nombre para obtener el id
+    const { data: campanas } = await supabase.from('mkt_campanas').select('id, nombre, codigo')
+    const byNombre = new Map(campanas?.map(c => [c.nombre.toLowerCase(), c]) || [])
+    const byCodigo = new Map(campanas?.filter(c=>c.codigo).map(c => [c.codigo.toLowerCase(), c]) || [])
+
+    let guardados = 0
+    for (const g of gastos) {
+      let campana = null
+      if (g.campana_nombre) {
+        campana = byNombre.get(g.campana_nombre.toLowerCase()) ||
+                  byCodigo.get(g.campana_nombre.toLowerCase())
+      }
+      await supabase.from('mkt_gastos').insert({
+        campana_id:  campana?.id || null,
+        concepto:    g.concepto,
+        monto:       g.monto,
+        fecha:       g.fecha,
+        proveedor:   g.proveedor,
+      })
+      guardados++
+    }
+
+    setUploadMsg(`${guardados} gastos importados`)
+    setUploading(false); setFileGasto(null)
+    load()
   }
 
   // Datos para el gráfico
-  const chartData = performance.slice(0, 8).map(c => ({
-    name: c.nombre.length > 12 ? c.nombre.slice(0, 12) + '…' : c.nombre,
-    Gasto:   Math.round((c.gasto_total || 0) / 1000),
-    Ingreso: Math.round((c.ingreso_total || 0) / 1000),
+  const chartData = perf.slice(0, 8).map(c => ({
+    name:    c.nombre.length > 14 ? c.nombre.slice(0,14)+'…' : c.nombre,
+    Gasto:   Math.round((c.gasto_total    || 0) / 1000),
+    Ingreso: Math.round((c.ingreso_total  || 0) / 1000),
+    Ventas:  c.total_ventas || 0,
   }))
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
+
+      {/* HEADER */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-gray-800">Campañas</h1>
-          <p className="text-gray-500 text-sm mt-1">
-            Registro de campañas · Gastos · Performance. Hacé clic en cualquier celda para editar.
-          </p>
+          <h2 className="font-bold text-white text-base">Campañas</h2>
+          <p className="text-xs text-gray-500 mt-0.5">Registro · Gastos · Performance vs ventas</p>
         </div>
-        <button
-          onClick={() => setShowModal(true)}
-          className="px-4 py-2 bg-[#8BC34A] text-white font-semibold rounded-lg hover:bg-[#7CB342] text-sm"
-        >
-          + Nueva campaña
-        </button>
+        <button onClick={() => setShowModal(true)} className="btn-primary text-xs">+ Nueva campaña</button>
       </div>
 
-      {/* GRÁFICO GASTO vs INGRESO */}
-      {chartData.length > 0 && (
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
-          <h3 className="font-semibold text-gray-700 mb-4">Gasto vs Ingreso por campaña (miles $)</h3>
-          <ResponsiveContainer width="100%" height={220}>
-            <BarChart data={chartData} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-              <XAxis dataKey="name" tick={{ fontSize: 11 }} />
-              <YAxis tick={{ fontSize: 11 }} tickFormatter={v => `$${v}K`} />
-              <Tooltip formatter={(v, n) => [`$${v.toLocaleString('es-AR')}K`, n]} />
-              <Legend />
-              <Bar dataKey="Gasto"   fill="#ef5350" radius={[4,4,0,0]} />
-              <Bar dataKey="Ingreso" fill="#8BC34A" radius={[4,4,0,0]} />
-            </BarChart>
-          </ResponsiveContainer>
+      {/* TABS */}
+      <div className="flex gap-1 border-b" style={{ borderColor:'#2a2a2a' }}>
+        {[
+          { id:'performance', label:'Performance' },
+          { id:'gastos',      label:'Cargar gastos' },
+          { id:'registro',    label:'Registro de campañas' },
+        ].map(t => (
+          <button key={t.id} onClick={() => setActiveTab(t.id)}
+            className={`px-4 py-2 text-xs font-semibold border-b-2 transition-all -mb-px
+              ${activeTab === t.id
+                ? 'text-white border-[#B5E000]'
+                : 'text-gray-500 border-transparent hover:text-gray-300'}`}>
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {/* ── PESTAÑA: PERFORMANCE ── */}
+      {activeTab === 'performance' && (
+        <div className="space-y-5">
+
+          {/* Gráfico */}
+          {chartData.length > 0 && (
+            <div className="card">
+              <h3 className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-4">
+                Gasto vs Ingreso por campaña (miles $)
+              </h3>
+              <ResponsiveContainer width="100%" height={240}>
+                <BarChart data={chartData} margin={{ top:5, right:20, left:0, bottom:5 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#2a2a2a"/>
+                  <XAxis dataKey="name" tick={{ fontSize:10, fill:'#6b7280' }}/>
+                  <YAxis tick={{ fontSize:11, fill:'#6b7280' }} tickFormatter={v=>`$${v}K`}/>
+                  <Tooltip content={customTooltip}/>
+                  <Legend wrapperStyle={{ fontSize:12, color:'#9ca3af' }}/>
+                  <Bar dataKey="Gasto"   fill="#ef4444" radius={[4,4,0,0]}/>
+                  <Bar dataKey="Ingreso" fill={BRAND}   radius={[4,4,0,0]}/>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+
+          {/* Tabla de performance */}
+          <div className="card">
+            <div className="overflow-x-auto rounded-lg border" style={{ borderColor:'#2a2a2a' }}>
+              <table className="dark-table">
+                <thead><tr>
+                  <th>Campaña</th>
+                  <th>Marca</th>
+                  <th>Canal</th>
+                  <th className="text-right">Presupuesto</th>
+                  <th className="text-right">Gasto total</th>
+                  <th className="text-right">Leads</th>
+                  <th className="text-right">Ventas atrib.</th>
+                  <th className="text-right">Ingreso</th>
+                  <th className="text-right">CAC</th>
+                  <th className="text-right">ROI</th>
+                </tr></thead>
+                <tbody>
+                  {loading && <tr><td colSpan={10} className="text-center py-8 text-gray-600">Cargando...</td></tr>}
+                  {!loading && perf.length === 0 && (
+                    <tr><td colSpan={10} className="text-center py-10 text-gray-600">
+                      Sin campañas. Creá la primera con el botón de arriba.
+                    </td></tr>
+                  )}
+                  {perf.map(c => {
+                    const roi = c.roi_porcentaje
+                    const roiColor = roi == null ? '#6b7280' : roi >= 0 ? '#B5E000' : '#f87171'
+                    return (
+                      <tr key={c.id}>
+                        <td className="font-semibold text-white">
+                          {c.nombre}
+                          {c.codigo && <span className="ml-1 badge badge-gray text-xs">[{c.codigo}]</span>}
+                        </td>
+                        <td>{c.marca ? <span className="badge badge-gray">{c.marca}</span> : '—'}</td>
+                        <td>{c.canal ? <span className="badge badge-blue">{c.canal}</span> : '—'}</td>
+                        <td className="text-right text-gray-400 text-xs">{fmt(c.presupuesto)}</td>
+                        <td className="text-right text-gray-300 text-xs font-semibold">{fmt(c.gasto_total)}</td>
+                        <td className="text-right font-bold" style={{ color:'#60a5fa' }}>{c.total_leads ?? 0}</td>
+                        <td className="text-right font-bold" style={{ color: BRAND }}>{c.total_ventas ?? 0}</td>
+                        <td className="text-right text-gray-300 text-xs">{fmt(c.ingreso_total)}</td>
+                        <td className="text-right text-gray-400 text-xs">{fmt(c.cac)}</td>
+                        <td className="text-right font-bold text-sm" style={{ color: roiColor }}>
+                          {roi != null ? `${roi >= 0 ? '+' : ''}${roi}%` : '—'}
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+            <div className="mt-3 p-3 rounded-lg text-xs text-gray-600" style={{ background:'#111', border:'1px solid #1f1f1f' }}>
+              Las ventas atribuidas y el ingreso se calculan a partir del cruce en la pestaña <strong className="text-gray-400">Asignados</strong>.
+              Una vez ejecutado el cruce, los números acá se actualizan solos.
+            </div>
+          </div>
         </div>
       )}
 
-      {/* TABLA DE PERFORMANCE */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="bg-gray-50 border-b text-xs font-semibold text-gray-500 uppercase tracking-wide">
-                <th className="text-left px-4 py-3">Código</th>
-                <th className="text-left px-4 py-3">Nombre</th>
-                <th className="text-left px-4 py-3">Marca</th>
-                <th className="text-left px-4 py-3">Canal</th>
-                <th className="text-right px-4 py-3">Presupuesto</th>
-                <th className="text-right px-4 py-3">Gasto total</th>
-                <th className="text-right px-4 py-3">Leads</th>
-                <th className="text-right px-4 py-3">Ventas</th>
-                <th className="text-right px-4 py-3">Ingreso</th>
-                <th className="text-right px-4 py-3">CAC</th>
-                <th className="text-right px-4 py-3">ROI</th>
-                <th className="text-center px-4 py-3">Gastos</th>
-                <th className="text-center px-4 py-3">Estado</th>
-              </tr>
-            </thead>
-            <tbody>
-              {loading && (
-                <tr><td colSpan={13} className="text-center py-8 text-gray-400">Cargando...</td></tr>
-              )}
-              {!loading && performance.length === 0 && (
-                <tr>
-                  <td colSpan={13} className="text-center py-10 text-gray-400">
-                    <div className="text-3xl mb-2">🎯</div>
-                    <div>Sin campañas. Creá la primera con el botón de arriba.</div>
-                  </td>
-                </tr>
-              )}
-              {performance.map(c => (
-                <tr key={c.id} className="border-b border-gray-50 hover:bg-gray-50/50">
-                  <td className="px-4 py-2">
-                    <EditCell value={c.codigo} onSave={v => updateField(c.id, 'codigo', v)} />
-                  </td>
-                  <td className="px-4 py-2 font-medium">
-                    <EditCell value={c.nombre} onSave={v => updateField(c.id, 'nombre', v)} />
-                  </td>
-                  <td className="px-4 py-2">
-                    <EditCell value={c.marca} onSave={v => updateField(c.id, 'marca', v)} options={MARCAS} />
-                  </td>
-                  <td className="px-4 py-2">
-                    <EditCell value={c.canal} onSave={v => updateField(c.id, 'canal', v)} options={['', ...CANALES]} />
-                  </td>
-                  <td className="px-4 py-2 text-right">
-                    <EditCell
-                      value={c.presupuesto ? Math.round(c.presupuesto).toLocaleString('es-AR') : '0'}
-                      onSave={v => updateField(c.id, 'presupuesto', parseFloat(v.replace(/\D/g,'')) || 0)}
-                      type="number"
-                    />
-                  </td>
-                  <td className="px-4 py-2 text-right text-gray-700">{fmt(c.gasto_total)}</td>
-                  <td className="px-4 py-2 text-right">
-                    <span className="font-semibold text-blue-600">{c.total_leads ?? 0}</span>
-                  </td>
-                  <td className="px-4 py-2 text-right">
-                    <span className="font-semibold text-green-600">{c.total_ventas ?? 0}</span>
-                  </td>
-                  <td className="px-4 py-2 text-right">{fmt(c.ingreso_total)}</td>
-                  <td className="px-4 py-2 text-right text-gray-600">{fmt(c.cac)}</td>
-                  <td className="px-4 py-2 text-right">{fmtROI(c.roi_porcentaje)}</td>
-                  <td className="px-4 py-2 text-center">
-                    <button
-                      onClick={() => setGastosFor(c)}
-                      className="text-xs px-2 py-1 border border-gray-200 rounded hover:bg-gray-100"
-                    >
-                      💸 {fmt(c.gastos_adicionales)}
-                    </button>
-                  </td>
-                  <td className="px-4 py-2 text-center">
-                    <button
-                      onClick={() => updateField(c.id, 'activa', !c.activa)}
-                      className={`text-xs px-2 py-0.5 rounded-full font-medium
-                        ${c.activa ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}
-                    >
-                      {c.activa ? 'Activa' : 'Inactiva'}
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
+      {/* ── PESTAÑA: CARGAR GASTOS ── */}
+      {activeTab === 'gastos' && (
+        <div className="space-y-5">
+          <div className="card">
+            <h3 className="font-bold text-white mb-1">Importar gastos desde Excel</h3>
+            <p className="text-xs text-gray-500 mb-5">
+              Subí el Excel de gastos del área de Compras. El sistema intenta asociar cada gasto a una campaña por nombre o código.
+            </p>
 
-      {/* SIN MAPEAR */}
-      <UnmappedCodes onMap={load} />
+            {/* Formato esperado */}
+            <div className="mb-5">
+              <div className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-2">Formato del Excel</div>
+              <div className="rounded-lg border overflow-hidden" style={{ borderColor:'#2a2a2a' }}>
+                <table className="dark-table text-xs">
+                  <thead><tr><th>Columna</th><th>Descripción</th><th>Requerida</th></tr></thead>
+                  <tbody>
+                    {[
+                      { col:'Campaña',    desc:'Nombre o código de la campaña (ej: GOLAZZO o fl2)', req:true  },
+                      { col:'Monto',      desc:'Monto del gasto en pesos',                          req:true  },
+                      { col:'Concepto',   desc:'Descripción del gasto',                             req:false },
+                      { col:'Fecha',      desc:'Fecha del gasto (dd/mm/aaaa)',                      req:false },
+                      { col:'Proveedor',  desc:'Nombre del proveedor o medio',                      req:false },
+                    ].map(f => (
+                      <tr key={f.col}>
+                        <td><span className="font-mono" style={{ color: BRAND }}>{f.col}</span></td>
+                        <td className="text-gray-400">{f.desc}</td>
+                        <td><span className={`badge ${f.req ? 'badge-green' : 'badge-gray'}`}>{f.req ? 'Sí' : 'No'}</span></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* Drop zone */}
+            <div
+              className={`dropzone mb-4 ${fileGasto ? 'filled' : ''}`}
+              onClick={() => fileRef.current.click()}
+              onDragOver={e => e.preventDefault()}
+              onDrop={e => { e.preventDefault(); const f = e.dataTransfer.files[0]; if(f) setFileGasto(f) }}
+            >
+              <input ref={fileRef} type="file" accept=".xls,.xlsx,.csv" className="hidden"
+                onChange={e => e.target.files[0] && setFileGasto(e.target.files[0])} />
+              <div className="text-2xl mb-1">{fileGasto ? '✓' : '↑'}</div>
+              <div className="font-semibold text-sm text-white">Excel de gastos</div>
+              <div className="text-xs text-gray-500 mt-0.5">Exportación del área de Compras</div>
+              {fileGasto
+                ? <div className="text-xs mt-1" style={{ color: BRAND }}>{fileGasto.name}</div>
+                : <div className="text-xs mt-1 text-gray-600">Clic o arrastrar archivo .xls / .xlsx</div>}
+            </div>
+
+            <div className="flex items-center gap-3">
+              <button onClick={importarGastos} disabled={uploading || !fileGasto} className="btn-primary">
+                {uploading ? 'Importando...' : 'Importar gastos'}
+              </button>
+              {uploadMsg && <span className="text-xs" style={{ color: BRAND }}>{uploadMsg}</span>}
+            </div>
+          </div>
+
+          {/* Gastos cargados por campaña */}
+          <GastosTable perf={perf} />
+        </div>
+      )}
+
+      {/* ── PESTAÑA: REGISTRO DE CAMPAÑAS ── */}
+      {activeTab === 'registro' && (
+        <div className="card">
+          <p className="text-xs text-gray-500 mb-4">
+            Hacé clic en cualquier celda para editarla. El código es el que aparece en los leads (ej: <span style={{color:BRAND}}>[fl2]</span>).
+          </p>
+          <div className="overflow-x-auto rounded-lg border" style={{ borderColor:'#2a2a2a' }}>
+            <table className="dark-table">
+              <thead><tr>
+                <th>Código</th><th>Nombre</th><th>Marca</th><th>Canal</th>
+                <th>Presupuesto</th><th>Inicio</th><th>Fin</th><th>Estado</th>
+              </tr></thead>
+              <tbody>
+                {loading && <tr><td colSpan={8} className="text-center py-8 text-gray-600">Cargando...</td></tr>}
+                {perf.map(c => (
+                  <tr key={c.id}>
+                    <td><EditCell value={c.codigo}       onSave={v => update(c.id,'codigo',v)} /></td>
+                    <td><EditCell value={c.nombre}       onSave={v => update(c.id,'nombre',v)} /></td>
+                    <td><EditCell value={c.marca}        onSave={v => update(c.id,'marca',v)} options={MARCAS} /></td>
+                    <td><EditCell value={c.canal}        onSave={v => update(c.id,'canal',v)} options={['', ...CANALES]} /></td>
+                    <td><EditCell value={c.presupuesto ? Math.round(c.presupuesto).toLocaleString('es-AR') : '0'}
+                      onSave={v => update(c.id,'presupuesto', parseFloat(v.replace(/\D/g,''))||0)} type="number" /></td>
+                    <td><EditCell value={c.fecha_inicio} onSave={v => update(c.id,'fecha_inicio',v)} type="date" /></td>
+                    <td><EditCell value={c.fecha_fin}    onSave={v => update(c.id,'fecha_fin',v)} type="date" /></td>
+                    <td>
+                      <button onClick={() => update(c.id,'activa',!c.activa)}
+                        className={`badge ${c.activa ? 'badge-green' : 'badge-gray'} cursor-pointer`}>
+                        {c.activa ? 'Activa' : 'Inactiva'}
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Códigos sin mapear */}
+          <UnmappedCodes onMap={load} campanas={perf} />
+        </div>
+      )}
 
       {showModal && <NuevaCampanaModal onClose={() => setShowModal(false)} onSaved={load} />}
-      {gastosFor  && <GastosModal campana={gastosFor} onClose={() => setGastosFor(null)} onSaved={load} />}
     </div>
   )
 }
 
-/** Muestra los leads con código de campaña no mapeado */
-function UnmappedCodes({ onMap }) {
-  const [codes, setCodes]     = useState([])
-  const [campanas, setCampanas] = useState([])
-  const [mapping, setMapping]  = useState({})
+// ── GASTOS POR CAMPAÑA ────────────────────────────────────
+function GastosTable({ perf }) {
+  const [gastos, setGastos] = useState([])
+  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    Promise.all([
-      supabase.from('mkt_leads')
-        .select('codigo_campana')
-        .not('codigo_campana', 'is', null)
-        .is('campana_id', null),
-      supabase.from('mkt_campanas').select('id, nombre')
-    ]).then(([{ data: leads }, { data: camp }]) => {
-      const unique = [...new Set((leads || []).map(l => l.codigo_campana))]
-      setCodes(unique)
-      setCampanas(camp || [])
-    })
+    supabase.from('mkt_gastos').select('*,mkt_campanas(nombre)').order('fecha', { ascending:false }).limit(100)
+      .then(({ data }) => { setGastos(data || []); setLoading(false) })
+  }, [perf])
+
+  const total = gastos.reduce((s, g) => s + (g.monto||0), 0)
+
+  return (
+    <div className="card">
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="font-bold text-white text-sm">Gastos registrados</h3>
+        <span className="text-sm font-bold" style={{ color: BRAND }}>{fmt(total)} total</span>
+      </div>
+      <div className="overflow-x-auto rounded-lg border" style={{ borderColor:'#2a2a2a' }}>
+        <table className="dark-table">
+          <thead><tr>
+            <th>Campaña</th><th>Concepto</th><th>Proveedor</th><th>Fecha</th><th className="text-right">Monto</th>
+          </tr></thead>
+          <tbody>
+            {loading && <tr><td colSpan={5} className="text-center py-6 text-gray-600">Cargando...</td></tr>}
+            {!loading && gastos.length === 0 && <tr><td colSpan={5} className="text-center py-6 text-gray-600">Sin gastos cargados</td></tr>}
+            {gastos.map(g => (
+              <tr key={g.id}>
+                <td>{g.mkt_campanas?.nombre
+                  ? <span className="badge badge-green">{g.mkt_campanas.nombre}</span>
+                  : <span className="badge badge-gray">Sin asignar</span>}</td>
+                <td className="text-gray-400">{g.concepto || '—'}</td>
+                <td className="text-gray-500">{g.proveedor || '—'}</td>
+                <td className="text-gray-500 text-xs">{g.fecha || '—'}</td>
+                <td className="text-right font-bold" style={{ color: BRAND }}>{fmt(g.monto)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
+// ── CÓDIGOS SIN MAPEAR ────────────────────────────────────
+function UnmappedCodes({ onMap, campanas }) {
+  const [codes, setCodes]   = useState([])
+  const [map,   setMap]     = useState({})
+
+  useEffect(() => {
+    supabase.from('mkt_leads').select('codigo_campana').not('codigo_campana','is',null).is('campana_id',null)
+      .then(({ data }) => {
+        const unique = [...new Set((data||[]).map(l=>l.codigo_campana))]
+        setCodes(unique)
+      })
   }, [])
 
-  const mapCode = async (code, campanaId) => {
-    await supabase.from('mkt_leads')
-      .update({ campana_id: campanaId })
-      .eq('codigo_campana', code)
-    await supabase.from('mkt_campanas')
-      .update({ codigo: code })
-      .eq('id', campanaId)
-    setCodes(prev => prev.filter(c => c !== code))
+  const vincular = async (code, campanaId) => {
+    await supabase.from('mkt_leads').update({ campana_id: campanaId }).eq('codigo_campana', code)
+    await supabase.from('mkt_campanas').update({ codigo: code }).eq('id', campanaId)
+    setCodes(p => p.filter(c => c !== code))
     onMap()
   }
 
-  if (codes.length === 0) return null
+  if (!codes.length) return null
 
   return (
-    <div className="bg-amber-50 border border-amber-200 rounded-xl p-5">
-      <h3 className="font-semibold text-amber-800 mb-1">⚠️ Códigos sin mapear ({codes.length})</h3>
-      <p className="text-sm text-amber-700 mb-4">
-        Estos códigos aparecen en los leads pero no están vinculados a ninguna campaña registrada.
-        Asigná cada uno a una campaña existente.
+    <div className="mt-4 p-4 rounded-xl border" style={{ background:'#1a1500', borderColor:'#fbbf24' }}>
+      <h4 className="font-bold text-yellow-400 text-sm mb-1">Códigos sin mapear ({codes.length})</h4>
+      <p className="text-xs text-yellow-600 mb-3">
+        Estos códigos aparecen en los leads pero no están vinculados a ninguna campaña. Asignalos para que el cruce funcione.
       </p>
       <div className="space-y-2">
         {codes.map(code => (
           <div key={code} className="flex items-center gap-3">
-            <code className="bg-amber-100 px-2 py-1 rounded text-amber-900 font-mono text-sm min-w-[80px]">
-              [{code}]
-            </code>
-            <select
-              value={mapping[code] || ''}
-              onChange={e => setMapping(p => ({ ...p, [code]: e.target.value }))}
-              className="border border-amber-200 rounded-lg px-3 py-1.5 text-sm flex-1 max-w-xs"
-            >
+            <code className="px-2 py-1 rounded text-xs font-mono" style={{ background:'#2a1f00', color: BRAND }}>[{code}]</code>
+            <select value={map[code]||''} onChange={e => setMap(p=>({...p,[code]:e.target.value}))}
+              className="input-dark flex-1 max-w-xs text-xs">
               <option value="">Seleccionar campaña...</option>
               {campanas.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
             </select>
-            <button
-              onClick={() => mapping[code] && mapCode(code, mapping[code])}
-              disabled={!mapping[code]}
-              className="px-3 py-1.5 bg-amber-500 text-white rounded-lg text-sm hover:bg-amber-600 disabled:opacity-40"
-            >
+            <button onClick={() => map[code] && vincular(code, map[code])}
+              disabled={!map[code]}
+              className="btn-primary text-xs px-3 py-1.5">
               Vincular
             </button>
           </div>
