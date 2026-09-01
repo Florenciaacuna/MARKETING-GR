@@ -2,7 +2,7 @@
 // PARSERS — Grupo Randazzo Marketing Dashboard
 // Maneja: XLSX real, CSV con punto y coma, HTML
 // =============================================
-import * as XLSX from 'xlsx'
+import * as XLSX from 'https://cdn.sheetjs.com/xlsx-0.20.0/package/xlsx.mjs'
 
 /** Leer archivo como texto con encoding Windows-1252 */
 async function readFileText(file) {
