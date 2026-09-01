@@ -168,7 +168,16 @@ export default function Campanas() {
 
   const gastos = rows.map(r => {
     const campana_nombre = r['campaña'] || r['CAMPAÑA'] || r['Campaña'] || null
-    const monto    = parseFloat(String(r['MONTO'] || r['monto'] || r['Monto'] || '0').replace(/\./g,'').replace(',','.')) || 0
+    const parseMonto = (val) => {
+  if (!val && val !== 0) return 0
+  if (typeof val === 'number') return val
+  const str = String(val)
+    .replace(/[^0-9,.-]/g, '')  // sacar $, espacios, letras
+    .replace(/\.(?=\d{3})/g, '') // sacar punto de miles (1.500 → 1500)
+    .replace(',', '.')           // coma decimal → punto (1500,50 → 1500.50)
+  return parseFloat(str) || 0
+}
+const monto = parseMonto(r['MONTO'] || r['monto'] || r['Monto'])
     const concepto = r['Concepto'] || r['CONCEPTO'] || null
     const fecha    = r['FECHA'] || r['fecha'] || null
     const notas    = r['Notas'] || r['NOTAS'] || null
