@@ -151,70 +151,49 @@ export default function Campanas() {
     setPerf(prev => prev.map(c => c.id === id ? { ...c, [field]: value } : c))
   }
 
+  // Importar Excel de gastos
   async function importarGastos() {
-  if (!fileGasto) return
-  setUploading(true); setUploadMsg('')
+    if (!fileGasto) return
+    setUploading(true); setUploadMsg('')
+    const { data: rows } = await parseFile(fileGasto)
 
-  const { data: rows } = await parseFile(fileGasto)
+    // Intentar mapear columnas flexiblemente
+    const gastos = rows.map(r => {
+      const campana_nombre = r['campaña'] || r['CAMPAÑA'] || r['Campaña'] || null
+      const monto = parseFloat(r['MONTO'] || r['monto'] || r['Monto'] || 0)
+      const concepto = r['Concepto'] || r['CONCEPTO'] || null
+      const fecha = r['FECHA'] || r['fecha'] || null
+      const notas = r['Notas'] || r['NOTAS'] || null
+      return { campana_nombre, monto, concepto, fecha, proveedor: notas }
+    }).filter(g => g.monto > 0)
 
-  if (!rows || rows.length === 0) {
-    setUploadMsg('Error: el archivo no se pudo leer o está vacío')
-    setUploading(false); return
-  }
-  // Mostrar las columnas detectadas para debug
-  const columnas = Object.keys(rows[0] || {})
-  console.log('Columnas detectadas:', columnas)
-  console.log('Primera fila:', rows[0])
+    // Buscar campañas por nombre para obtener el id
+    const { data: campanas } = await supabase.from('mkt_campanas').select('id, nombre, codigo')
+    const byNombre = new Map(campanas?.map(c => [c.nombre.toLowerCase(), c]) || [])
+    const byCodigo = new Map(campanas?.filter(c=>c.codigo).map(c => [c.codigo.toLowerCase(), c]) || [])
 
-  const gastos = rows.map(r => {
-    const campana_nombre = r['campaña'] || r['CAMPAÑA'] || r['Campaña'] || null
-    const parseMonto = (val) => {
-  if (!val && val !== 0) return 0
-  if (typeof val === 'number') return val
-  const str = String(val)
-    .replace(/[^0-9,.-]/g, '')  // sacar $, espacios, letras
-    .replace(/\.(?=\d{3})/g, '') // sacar punto de miles (1.500 → 1500)
-    .replace(',', '.')           // coma decimal → punto (1500,50 → 1500.50)
-  return parseFloat(str) || 0
-}
-const monto = parseMonto(r['MONTO'] || r['monto'] || r['Monto'])
-    const concepto = r['Concepto'] || r['CONCEPTO'] || null
-    const fecha    = r['FECHA'] || r['fecha'] || null
-    const notas    = r['Notas'] || r['NOTAS'] || null
-    return { campana_nombre, monto, concepto, fecha, proveedor: notas }
-  }).filter(g => g.monto > 0)
-
-  if (gastos.length === 0) {
-    setUploadMsg(`El archivo tiene ${rows.length} filas pero ninguna con monto válido. Columnas detectadas: ${columnas.join(', ')}`)
-    setUploading(false); return
-  }
-
-  const { data: campanas } = await supabase.from('mkt_campanas').select('id, nombre, codigo')
-  const byNombre = new Map(campanas?.map(c => [c.nombre.toLowerCase().trim(), c]) || [])
-  const byCodigo = new Map(campanas?.filter(c=>c.codigo).map(c => [c.codigo.toLowerCase().trim(), c]) || [])
-
-  let guardados = 0; let sinCampana = 0
-  for (const g of gastos) {
-    let campana = null
-    if (g.campana_nombre) {
-      campana = byNombre.get(g.campana_nombre.toLowerCase().trim()) ||
-                byCodigo.get(g.campana_nombre.toLowerCase().trim())
+    let guardados = 0
+    for (const g of gastos) {
+      let campana = null
+      if (g.campana_nombre) {
+        campana = byNombre.get(g.campana_nombre.toLowerCase()) ||
+                  byCodigo.get(g.campana_nombre.toLowerCase())
+      }
+      await supabase.from('mkt_gastos').insert({
+        campana_id:  campana?.id || null,
+        concepto:    g.concepto,
+        monto:       g.monto,
+        fecha:       g.fecha,
+        proveedor:   g.proveedor,
+      })
+      guardados++
     }
-    if (!campana) sinCampana++
-    const { error } = await supabase.from('mkt_gastos').insert({
-      campana_id: campana?.id || null,
-      concepto:   g.concepto,
-      monto:      g.monto,
-      fecha:      g.fecha,
-      proveedor:  g.proveedor,
-    })
-    if (!error) guardados++
+
+    setUploadMsg(`${guardados} gastos importados`)
+    setUploading(false); setFileGasto(null)
+    load()
   }
 
-  setUploadMsg(`${guardados} gastos importados. ${sinCampana} sin campaña asignada (se guardan igual).`)
-  setUploading(false); setFileGasto(null)
-  load()
-}
   // Datos para el gráfico
   const chartData = perf.slice(0, 8).map(c => ({
     name:    c.nombre.length > 14 ? c.nombre.slice(0,14)+'…' : c.nombre,
@@ -444,40 +423,92 @@ const monto = parseMonto(r['MONTO'] || r['monto'] || r['Monto'])
 }
 
 // ── GASTOS POR CAMPAÑA ────────────────────────────────────
-function GastosTable({ perf }) {
-  const [gastos, setGastos] = useState([])
+function GastosTable({ perf, onReload }) {
+  const [gastos,  setGastos]  = useState([])
   const [loading, setLoading] = useState(true)
+  const [deleting,setDeleting]= useState(false)
 
-  useEffect(() => {
-    supabase.from('mkt_gastos').select('*,mkt_campanas(nombre)').order('fecha', { ascending:false }).limit(100)
+  const loadGastos = () => {
+    setLoading(true)
+    supabase.from('mkt_gastos').select('*,mkt_campanas(nombre)').order('fecha', { ascending:false }).limit(200)
       .then(({ data }) => { setGastos(data || []); setLoading(false) })
-  }, [perf])
+  }
+
+  useEffect(() => { loadGastos() }, [perf])
 
   const total = gastos.reduce((s, g) => s + (g.monto||0), 0)
+
+  const updateGasto = async (id, field, value) => {
+    const val = field === 'monto' ? (parseFloat(String(value).replace(/[^0-9,.]/g,'').replace('.','').replace(',','.')) || 0) : value
+    await supabase.from('mkt_gastos').update({ [field]: val }).eq('id', id)
+    setGastos(prev => prev.map(g => g.id === id ? { ...g, [field]: val } : g))
+    if (onReload) onReload()
+  }
+
+  const deleteGasto = async (id) => {
+    await supabase.from('mkt_gastos').delete().eq('id', id)
+    setGastos(prev => prev.filter(g => g.id !== id))
+    if (onReload) onReload()
+  }
+
+  const deleteAll = async () => {
+    if (!window.confirm(`¿Seguro que querés borrar los ${gastos.length} gastos cargados? Esta acción no se puede deshacer.`)) return
+    setDeleting(true)
+    await supabase.from('mkt_gastos').delete().neq('id', '00000000-0000-0000-0000-000000000000')
+    setGastos([])
+    setDeleting(false)
+    if (onReload) onReload()
+  }
 
   return (
     <div className="card">
       <div className="flex items-center justify-between mb-4">
-        <h3 className="font-bold text-white text-sm">Gastos registrados</h3>
-        <span className="text-sm font-bold" style={{ color: BRAND }}>{fmt(total)} total</span>
+        <div>
+          <h3 className="font-bold text-white text-sm">Gastos registrados</h3>
+          <div className="text-xs text-gray-500 mt-0.5">Clic en cualquier celda para editar · El monto se puede corregir directo</div>
+        </div>
+        <div className="flex items-center gap-3">
+          <span className="text-sm font-bold" style={{ color: BRAND }}>{fmt(total)} total</span>
+          {gastos.length > 0 && (
+            <button onClick={deleteAll} disabled={deleting}
+              className="text-xs px-3 py-1.5 rounded-lg border border-red-800 text-red-400 hover:bg-red-900/30 transition-colors disabled:opacity-40">
+              {deleting ? 'Borrando...' : 'Borrar todos'}
+            </button>
+          )}
+        </div>
       </div>
       <div className="overflow-x-auto rounded-lg border" style={{ borderColor:'#2a2a2a' }}>
         <table className="dark-table">
           <thead><tr>
-            <th>Campaña</th><th>Concepto</th><th>Proveedor</th><th>Fecha</th><th className="text-right">Monto</th>
+            <th>Campaña</th><th>Concepto</th><th>Notas</th><th>Fecha</th>
+            <th className="text-right">Monto</th><th></th>
           </tr></thead>
           <tbody>
-            {loading && <tr><td colSpan={5} className="text-center py-6 text-gray-600">Cargando...</td></tr>}
-            {!loading && gastos.length === 0 && <tr><td colSpan={5} className="text-center py-6 text-gray-600">Sin gastos cargados</td></tr>}
+            {loading && <tr><td colSpan={6} className="text-center py-6 text-gray-600">Cargando...</td></tr>}
+            {!loading && gastos.length === 0 && (
+              <tr><td colSpan={6} className="text-center py-6 text-gray-600">Sin gastos cargados</td></tr>
+            )}
             {gastos.map(g => (
               <tr key={g.id}>
-                <td>{g.mkt_campanas?.nombre
-                  ? <span className="badge badge-green">{g.mkt_campanas.nombre}</span>
-                  : <span className="badge badge-gray">Sin asignar</span>}</td>
-                <td className="text-gray-400">{g.concepto || '—'}</td>
-                <td className="text-gray-500">{g.proveedor || '—'}</td>
-                <td className="text-gray-500 text-xs">{g.fecha || '—'}</td>
-                <td className="text-right font-bold" style={{ color: BRAND }}>{fmt(g.monto)}</td>
+                <td>
+                  {g.mkt_campanas?.nombre
+                    ? <span className="badge badge-green">{g.mkt_campanas.nombre}</span>
+                    : <span className="badge badge-gray">Sin asignar</span>}
+                </td>
+                <td><EditCell value={g.concepto} onSave={v => updateGasto(g.id,'concepto',v)} /></td>
+                <td><EditCell value={g.proveedor} onSave={v => updateGasto(g.id,'proveedor',v)} /></td>
+                <td className="text-xs text-gray-500">{g.fecha || '—'}</td>
+                <td className="text-right">
+                  <EditCell
+                    value={g.monto ? g.monto.toLocaleString('es-AR') : '0'}
+                    onSave={v => updateGasto(g.id,'monto',v)}
+                    type="number"
+                  />
+                </td>
+                <td>
+                  <button onClick={() => deleteGasto(g.id)}
+                    className="text-xs text-red-700 hover:text-red-400 px-2 transition-colors">✕</button>
+                </td>
               </tr>
             ))}
           </tbody>
@@ -486,6 +517,7 @@ function GastosTable({ perf }) {
     </div>
   )
 }
+
 
 // ── CÓDIGOS SIN MAPEAR ────────────────────────────────────
 function UnmappedCodes({ onMap, campanas }) {
