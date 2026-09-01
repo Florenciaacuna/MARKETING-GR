@@ -159,12 +159,12 @@ export default function Campanas() {
 
     // Intentar mapear columnas flexiblemente
     const gastos = rows.map(r => {
-      const campana_nombre = r['Campaña'] || r['CAMPAÑA'] || r['Campaign'] || r['campana'] || null
-      const monto   = parseFloat(r['Monto'] || r['MONTO'] || r['monto'] || r['Importe'] || r['IMPORTE'] || 0)
-      const concepto = r['Concepto'] || r['CONCEPTO'] || r['Descripción'] || r['descripcion'] || null
-      const fecha   = r['Fecha'] || r['FECHA'] || r['fecha'] || null
-      const proveedor = r['Proveedor'] || r['PROVEEDOR'] || r['proveedor'] || null
-      return { campana_nombre, monto, concepto, fecha, proveedor }
+      const campana_nombre = r['campaña'] || r['CAMPAÑA'] || r['Campaña'] || null
+      const monto = parseFloat(r['MONTO'] || r['monto'] || r['Monto'] || 0)
+      const concepto = r['Concepto'] || r['CONCEPTO'] || null
+      const fecha = r['FECHA'] || r['fecha'] || null
+      const notas = r['Notas'] || r['NOTAS'] || null
+      return { campana_nombre, monto, concepto, fecha, proveedor: notas }
     }).filter(g => g.monto > 0)
 
     // Buscar campañas por nombre para obtener el id
@@ -329,11 +329,11 @@ export default function Campanas() {
                   <thead><tr><th>Columna</th><th>Descripción</th><th>Requerida</th></tr></thead>
                   <tbody>
                     {[
-                      { col:'Campaña',    desc:'Nombre o código de la campaña (ej: GOLAZZO o fl2)', req:true  },
-                      { col:'Monto',      desc:'Monto del gasto en pesos',                          req:true  },
-                      { col:'Concepto',   desc:'Descripción del gasto',                             req:false },
-                      { col:'Fecha',      desc:'Fecha del gasto (dd/mm/aaaa)',                      req:false },
-                      { col:'Proveedor',  desc:'Nombre del proveedor o medio',                      req:false },
+                      { col:'campaña',   desc:'Nombre o código de la campaña (ej: GOLAZZO o fl2)', req:true  },
+                      { col:'MONTO',     desc:'Monto del gasto en pesos',                          req:true  },
+                      { col:'Concepto',  desc:'Descripción del gasto',                             req:false },
+                      { col:'FECHA',     desc:'Fecha del gasto (dd/mm/aaaa)',                      req:false },
+                      { col:'Notas',     desc:'Observaciones adicionales',                         req:false },
                     ].map(f => (
                       <tr key={f.col}>
                         <td><span className="font-mono" style={{ color: BRAND }}>{f.col}</span></td>
