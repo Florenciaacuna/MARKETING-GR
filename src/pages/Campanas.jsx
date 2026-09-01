@@ -155,41 +155,75 @@ export default function Campanas() {
   async function importarGastos() {
     if (!fileGasto) return
     setUploading(true); setUploadMsg('')
+
     const { data: rows } = await parseFile(fileGasto)
 
-    // Intentar mapear columnas flexiblemente
-    const gastos = rows.map(r => {
-      const campana_nombre = r['campaña'] || r['CAMPAÑA'] || r['Campaña'] || null
-      const monto = parseFloat(r['MONTO'] || r['monto'] || r['Monto'] || 0)
-      const concepto = r['Concepto'] || r['CONCEPTO'] || null
-      const fecha = r['FECHA'] || r['fecha'] || null
-      const notas = r['Notas'] || r['NOTAS'] || null
-      return { campana_nombre, monto, concepto, fecha, proveedor: notas }
-    }).filter(g => g.monto > 0)
-
-    // Buscar campañas por nombre para obtener el id
-    const { data: campanas } = await supabase.from('mkt_campanas').select('id, nombre, codigo')
-    const byNombre = new Map(campanas?.map(c => [c.nombre.toLowerCase(), c]) || [])
-    const byCodigo = new Map(campanas?.filter(c=>c.codigo).map(c => [c.codigo.toLowerCase(), c]) || [])
-
-    let guardados = 0
-    for (const g of gastos) {
-      let campana = null
-      if (g.campana_nombre) {
-        campana = byNombre.get(g.campana_nombre.toLowerCase()) ||
-                  byCodigo.get(g.campana_nombre.toLowerCase())
-      }
-      await supabase.from('mkt_gastos').insert({
-        campana_id:  campana?.id || null,
-        concepto:    g.concepto,
-        monto:       g.monto,
-        fecha:       g.fecha,
-        proveedor:   g.proveedor,
-      })
-      guardados++
+    if (!rows || rows.length === 0) {
+      setUploadMsg('Error: el archivo no se pudo leer o está vacío')
+      setUploading(false); return
     }
 
-    setUploadMsg(`${guardados} gastos importados`)
+    // Parser de monto robusto — maneja números reales, strings con puntos/comas
+    const parseMonto = (val) => {
+      if (val === null || val === undefined || val === '') return 0
+      // Si ya es número JS (SheetJS con raw:true lo manda así)
+      if (typeof val === 'number') return Math.abs(val)
+      // Si es string — limpiar formato argentino
+      const str = String(val)
+        .replace(/[^0-9,.-]/g, '')   // sacar $, espacios, letras
+        .replace(/\.(?=\d{3})/g, '') // sacar punto de miles: 1.500 → 1500
+        .replace(',', '.')           // coma decimal → punto: 1500,50 → 1500.50
+      return Math.abs(parseFloat(str) || 0)
+    }
+
+    const gastos = rows.map(r => {
+      const rawMonto = r['MONTO'] ?? r['monto'] ?? r['Monto'] ?? r['monto '] ?? null
+      const monto    = parseMonto(rawMonto)
+      return {
+        campana_nombre: r['campaña'] || r['CAMPAÑA'] || r['Campaña'] || null,
+        monto,
+        concepto:       r['Concepto'] || r['CONCEPTO'] || null,
+        fecha:          r['FECHA']    || r['fecha']    || null,
+        proveedor:      r['Notas']    || r['NOTAS']    || null,
+        _rawMonto:      rawMonto,  // para debug
+      }
+    })
+
+    const conMonto = gastos.filter(g => g.monto > 0)
+
+    if (conMonto.length === 0) {
+      // Mostrar valores reales del campo MONTO para diagnóstico
+      const muestra = gastos.slice(0, 3)
+        .map(g => `"${g._rawMonto}" (${typeof g._rawMonto})`)
+        .join(' | ')
+      setUploadMsg(`Sin montos válidos. Valores leídos en MONTO: ${muestra}`)
+      setUploading(false); return
+    }
+
+    // Buscar campañas por nombre o código
+    const { data: campanas } = await supabase.from('mkt_campanas').select('id, nombre, codigo')
+    const byNombre = new Map(campanas?.map(c => [c.nombre.toLowerCase().trim(), c]) || [])
+    const byCodigo = new Map(campanas?.filter(c=>c.codigo).map(c => [c.codigo.toLowerCase().trim(), c]) || [])
+
+    let guardados = 0; let sinCampana = 0
+    for (const g of conMonto) {
+      let campana = null
+      if (g.campana_nombre) {
+        campana = byNombre.get(g.campana_nombre.toLowerCase().trim()) ||
+                  byCodigo.get(g.campana_nombre.toLowerCase().trim())
+      }
+      if (!campana) sinCampana++
+      const { error } = await supabase.from('mkt_gastos').insert({
+        campana_id: campana?.id || null,
+        concepto:   g.concepto,
+        monto:      g.monto,
+        fecha:      g.fecha,
+        proveedor:  g.proveedor,
+      })
+      if (!error) guardados++
+    }
+
+    setUploadMsg(`${guardados} gastos importados. ${sinCampana} sin campaña asignada.`)
     setUploading(false); setFileGasto(null)
     load()
   }
