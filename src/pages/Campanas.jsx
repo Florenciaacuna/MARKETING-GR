@@ -151,49 +151,61 @@ export default function Campanas() {
     setPerf(prev => prev.map(c => c.id === id ? { ...c, [field]: value } : c))
   }
 
-  // Importar Excel de gastos
   async function importarGastos() {
-    if (!fileGasto) return
-    setUploading(true); setUploadMsg('')
-    const { data: rows } = await parseFile(fileGasto)
+  if (!fileGasto) return
+  setUploading(true); setUploadMsg('')
 
-    // Intentar mapear columnas flexiblemente
-    const gastos = rows.map(r => {
-      const campana_nombre = r['campaña'] || r['CAMPAÑA'] || r['Campaña'] || null
-      const monto = parseFloat(r['MONTO'] || r['monto'] || r['Monto'] || 0)
-      const concepto = r['Concepto'] || r['CONCEPTO'] || null
-      const fecha = r['FECHA'] || r['fecha'] || null
-      const notas = r['Notas'] || r['NOTAS'] || null
-      return { campana_nombre, monto, concepto, fecha, proveedor: notas }
-    }).filter(g => g.monto > 0)
+  const { data: rows } = await parseFile(fileGasto)
 
-    // Buscar campañas por nombre para obtener el id
-    const { data: campanas } = await supabase.from('mkt_campanas').select('id, nombre, codigo')
-    const byNombre = new Map(campanas?.map(c => [c.nombre.toLowerCase(), c]) || [])
-    const byCodigo = new Map(campanas?.filter(c=>c.codigo).map(c => [c.codigo.toLowerCase(), c]) || [])
+  if (!rows || rows.length === 0) {
+    setUploadMsg('Error: el archivo no se pudo leer o está vacío')
+    setUploading(false); return
+  }
+  // Mostrar las columnas detectadas para debug
+  const columnas = Object.keys(rows[0] || {})
+  console.log('Columnas detectadas:', columnas)
+  console.log('Primera fila:', rows[0])
 
-    let guardados = 0
-    for (const g of gastos) {
-      let campana = null
-      if (g.campana_nombre) {
-        campana = byNombre.get(g.campana_nombre.toLowerCase()) ||
-                  byCodigo.get(g.campana_nombre.toLowerCase())
-      }
-      await supabase.from('mkt_gastos').insert({
-        campana_id:  campana?.id || null,
-        concepto:    g.concepto,
-        monto:       g.monto,
-        fecha:       g.fecha,
-        proveedor:   g.proveedor,
-      })
-      guardados++
-    }
+  const gastos = rows.map(r => {
+    const campana_nombre = r['campaña'] || r['CAMPAÑA'] || r['Campaña'] || null
+    const monto    = parseFloat(String(r['MONTO'] || r['monto'] || r['Monto'] || '0').replace(/\./g,'').replace(',','.')) || 0
+    const concepto = r['Concepto'] || r['CONCEPTO'] || null
+    const fecha    = r['FECHA'] || r['fecha'] || null
+    const notas    = r['Notas'] || r['NOTAS'] || null
+    return { campana_nombre, monto, concepto, fecha, proveedor: notas }
+  }).filter(g => g.monto > 0)
 
-    setUploadMsg(`${guardados} gastos importados`)
-    setUploading(false); setFileGasto(null)
-    load()
+  if (gastos.length === 0) {
+    setUploadMsg(`El archivo tiene ${rows.length} filas pero ninguna con monto válido. Columnas detectadas: ${columnas.join(', ')}`)
+    setUploading(false); return
   }
 
+  const { data: campanas } = await supabase.from('mkt_campanas').select('id, nombre, codigo')
+  const byNombre = new Map(campanas?.map(c => [c.nombre.toLowerCase().trim(), c]) || [])
+  const byCodigo = new Map(campanas?.filter(c=>c.codigo).map(c => [c.codigo.toLowerCase().trim(), c]) || [])
+
+  let guardados = 0; let sinCampana = 0
+  for (const g of gastos) {
+    let campana = null
+    if (g.campana_nombre) {
+      campana = byNombre.get(g.campana_nombre.toLowerCase().trim()) ||
+                byCodigo.get(g.campana_nombre.toLowerCase().trim())
+    }
+    if (!campana) sinCampana++
+    const { error } = await supabase.from('mkt_gastos').insert({
+      campana_id: campana?.id || null,
+      concepto:   g.concepto,
+      monto:      g.monto,
+      fecha:      g.fecha,
+      proveedor:  g.proveedor,
+    })
+    if (!error) guardados++
+  }
+
+  setUploadMsg(`${guardados} gastos importados. ${sinCampana} sin campaña asignada (se guardan igual).`)
+  setUploading(false); setFileGasto(null)
+  load()
+}
   // Datos para el gráfico
   const chartData = perf.slice(0, 8).map(c => ({
     name:    c.nombre.length > 14 ? c.nombre.slice(0,14)+'…' : c.nombre,
