@@ -164,18 +164,42 @@ export default function Campanas() {
     }
 
     // Parser de monto robusto — maneja números reales, strings con puntos/comas
-    const parseMonto = (val) => {
-      if (val === null || val === undefined || val === '') return 0
-      // Si ya es número JS (SheetJS con raw:true lo manda así)
-      if (typeof val === 'number') return Math.abs(val)
-      // Si es string — limpiar formato argentino
-      const str = String(val)
-        .replace(/[^0-9,.-]/g, '')   // sacar $, espacios, letras
-        .replace(/\.(?=\d{3})/g, '') // sacar punto de miles: 1.500 → 1500
-        .replace(',', '.')           // coma decimal → punto: 1500,50 → 1500.50
-      return Math.abs(parseFloat(str) || 0)
-    }
+   const parseMonto = (val) => {
+  if (val === null || val === undefined || val === '') return 0
+  if (typeof val === 'number') return Math.abs(val)
 
+  let str = String(val).replace(/[^0-9,.]/g, '') // sacar $, espacios, etc.
+  if (!str) return 0
+
+  const lastDot   = str.lastIndexOf('.')
+  const lastComma = str.lastIndexOf(',')
+
+  if (lastDot !== -1 && lastComma !== -1) {
+    // Ambos separadores: el último es el decimal
+    if (lastDot > lastComma) {
+      // 1,500.00 → formato US: coma=miles, punto=decimal
+      str = str.replace(/,/g, '')
+    } else {
+      // 1.500,00 → formato AR: punto=miles, coma=decimal
+      str = str.replace(/\./g, '').replace(',', '.')
+    }
+  } else if (lastDot !== -1) {
+    // Solo puntos → ver si es separador de miles (patrón: 950.000 o 1.000.000)
+    if (/^\d{1,3}(\.\d{3})+$/.test(str)) {
+      str = str.replace(/\./g, '') // punto = miles → sacar
+    }
+    // Si no cumple patrón (ej: 950.50) → lo deja como decimal
+  } else if (lastComma !== -1) {
+    // Solo comas → ver si es separador de miles (patrón: 950,000)
+    if (/^\d{1,3}(,\d{3})+$/.test(str)) {
+      str = str.replace(/,/g, '') // coma = miles → sacar
+    } else {
+      str = str.replace(',', '.') // coma = decimal → convertir
+    }
+  }
+
+  return Math.abs(parseFloat(str) || 0)
+}
     const gastos = rows.map(r => {
       const rawMonto = r['MONTO'] ?? r['monto'] ?? r['Monto'] ?? r['monto '] ?? null
       const monto    = parseMonto(rawMonto)
