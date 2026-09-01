@@ -267,94 +267,7 @@ export default function Campanas() {
 
       {/* ── PESTAÑA: PERFORMANCE ── */}
       {activeTab === 'performance' && (
-        <div className="space-y-5">
-
-          {/* Gráfico */}
-          {chartData.length > 0 && (
-            <div className="card">
-              <h3 className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-4">
-                Gasto vs Ingreso por campaña (miles $)
-              </h3>
-              <ResponsiveContainer width="100%" height={240}>
-                <BarChart data={chartData} margin={{ top:5, right:20, left:0, bottom:5 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#2a2a2a"/>
-                  <XAxis dataKey="name" tick={{ fontSize:10, fill:'#6b7280' }}/>
-                  <YAxis tick={{ fontSize:11, fill:'#6b7280' }} tickFormatter={v=>`$${v}K`}/>
-                  <Tooltip content={customTooltip}/>
-                  <Legend wrapperStyle={{ fontSize:12, color:'#9ca3af' }}/>
-                  <Bar dataKey="Gasto"   fill="#ef4444" radius={[4,4,0,0]}/>
-                  <Bar dataKey="Ingreso" fill={BRAND}   radius={[4,4,0,0]}/>
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          )}
-
-          {/* Tabla de performance */}
-          <div className="card">
-            <div className="overflow-x-auto rounded-lg border" style={{ borderColor:'#2a2a2a' }}>
-              <table className="dark-table">
-                <thead><tr>
-                  <th>Campaña</th>
-                  <th>Marca</th>
-                  <th>Canal</th>
-                  <th className="text-right">Presupuesto</th>
-                  <th className="text-right">Gasto total</th>
-                  <th className="text-right">Leads</th>
-                  <th className="text-right">Ventas atrib.</th>
-                  <th className="text-right">Ingreso ✏️</th>
-                  <th className="text-right">CAC</th>
-                  <th className="text-right">ROI</th>
-                </tr></thead>
-                <tbody>
-                  {loading && <tr><td colSpan={10} className="text-center py-8 text-gray-600">Cargando...</td></tr>}
-                  {!loading && perf.length === 0 && (
-                    <tr><td colSpan={10} className="text-center py-10 text-gray-600">
-                      Sin campañas. Creá la primera con el botón de arriba.
-                    </td></tr>
-                  )}
-                  {perf.map(c => {
-                    const roi = c.roi_porcentaje
-                    const roiColor = roi == null ? '#6b7280' : roi >= 0 ? '#B5E000' : '#f87171'
-                    return (
-                      <tr key={c.id}>
-                        <td className="font-semibold text-white">
-                          {c.nombre}
-                          {c.codigo && <span className="ml-1 badge badge-gray text-xs">[{c.codigo}]</span>}
-                        </td>
-                        <td>{c.marca ? <span className="badge badge-gray">{c.marca}</span> : '—'}</td>
-                        <td>{c.canal ? <span className="badge badge-blue">{c.canal}</span> : '—'}</td>
-                        <td className="text-right text-gray-400 text-xs">{fmt(c.presupuesto)}</td>
-                        <td className="text-right text-gray-300 text-xs font-semibold">{fmt(c.gasto_total)}</td>
-                        <td className="text-right font-bold" style={{ color:'#60a5fa' }}>{c.total_leads ?? 0}</td>
-                        <td className="text-right font-bold" style={{ color: BRAND }}>{c.total_ventas ?? 0}</td>
-                        <td className="text-right">
-                          <EditCell
-                            value={c.ingreso_total ? Math.round(c.ingreso_total).toLocaleString('es-AR') : '0'}
-                            onSave={async v => {
-                              const val = parseFloat(String(v).replace(/[^0-9,.]/g,'').replace(/\.(?=\d{3})/g,'').replace(',','.')) || 0
-                              await supabase.from('mkt_campanas').update({ ingreso_manual: val }).eq('id', c.id)
-                              load()
-                            }}
-                            type="number"
-                          />
-                        </td>
-                        <td className="text-right text-gray-400 text-xs">{fmt(c.cac)}</td>
-                        <td className="text-right font-bold text-sm" style={{ color: roiColor }}>
-                          {roi != null ? `${roi >= 0 ? '+' : ''}${roi}%` : '—'}
-                        </td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
-            </div>
-            <div className="mt-3 p-3 rounded-lg text-xs text-gray-500" style={{ background:'#111', border:'1px solid #1f1f1f' }}>
-              <span style={{color:'#B5E000'}}>✏️ Ingreso:</span> hacé clic en la celda para ingresar el ingreso total de la campaña (margen auto + gestoria de las ventas atribuidas). 
-              Las <strong className="text-gray-400">Ventas atrib.</strong> se actualizan automáticamente al ejecutar el cruce en <strong className="text-gray-400">Asignados</strong>.
-              El <strong className="text-gray-400">Gasto total</strong> incluye el presupuesto + los gastos importados del Excel de Compras.
-            </div>
-          </div>
-        </div>
+        <PerformanceTab campanas={perf} onReload={load} />
       )}
 
       {/* ── PESTAÑA: CARGAR GASTOS ── */}
@@ -463,6 +376,283 @@ export default function Campanas() {
       )}
 
       {showModal && <NuevaCampanaModal onClose={() => setShowModal(false)} onSaved={load} />}
+    </div>
+  )
+}
+
+
+// ── PESTAÑA PERFORMANCE ──────────────────────────────────
+function PerformanceTab({ campanas, onReload }) {
+  const [filtroId,    setFiltroId]    = useState('all')
+  const [desde,       setDesde]       = useState('')
+  const [hasta,       setHasta]       = useState('')
+  const [gastos,      setGastos]      = useState([])
+  const [ventas,      setVentas]      = useState([])
+  const [loadingDet,  setLoadingDet]  = useState(false)
+
+  // Cargar detalle cuando cambia el filtro
+  useEffect(() => {
+    if (filtroId === 'all') { setGastos([]); setVentas([]); return }
+    setLoadingDet(true)
+    Promise.all([
+      supabase.from('mkt_gastos')
+        .select('*')
+        .eq('campana_id', filtroId)
+        .order('fecha'),
+      supabase.from('mkt_ventas')
+        .select('id,pv_solicitud,fecha,tipo,nombre,dni,vendedor,marca,fuente,metodo_match')
+        .eq('campana_id', filtroId)
+        .order('fecha', { ascending: false })
+    ]).then(([{ data: g }, { data: v }]) => {
+      setGastos(g || [])
+      setVentas(v || [])
+      setLoadingDet(false)
+    })
+  }, [filtroId])
+
+  // Filtrar campañas por período si se especifica
+  const campanasFiltradas = campanas.filter(c => {
+    if (!desde && !hasta) return true
+    const ini = c.fecha_inicio || ''
+    const fin = c.fecha_fin    || ''
+    if (desde && fin && fin < desde) return false
+    if (hasta && ini && ini > hasta) return false
+    return true
+  })
+
+  const campanaSeleccionada = campanas.find(c => c.id === filtroId)
+  const totalGastos = gastos.reduce((s, g) => s + (g.monto || 0), 0)
+
+  return (
+    <div className="space-y-5">
+
+      {/* FILTROS */}
+      <div className="card">
+        <div className="flex flex-wrap items-end gap-4">
+          <div>
+            <div className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-1.5">Campaña</div>
+            <select
+              value={filtroId}
+              onChange={e => setFiltroId(e.target.value)}
+              className="input-dark w-56"
+            >
+              <option value="all">— Todas las campañas —</option>
+              {campanasFiltradas.map(c => (
+                <option key={c.id} value={c.id}>{c.nombre}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <div className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-1.5">Período desde</div>
+            <input type="date" value={desde} onChange={e => setDesde(e.target.value)} className="input-dark w-40" />
+          </div>
+          <div>
+            <div className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-1.5">Hasta</div>
+            <input type="date" value={hasta} onChange={e => setHasta(e.target.value)} className="input-dark w-40" />
+          </div>
+          {(desde || hasta || filtroId !== 'all') && (
+            <button onClick={() => { setFiltroId('all'); setDesde(''); setHasta('') }}
+              className="text-xs text-gray-600 hover:text-gray-300 pb-1">
+              Limpiar filtros
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* ── VISTA: TODAS LAS CAMPAÑAS ── */}
+      {filtroId === 'all' && (
+        <div className="card">
+          <h3 className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-4">
+            Resumen de campañas {desde || hasta ? `— período filtrado` : ''}
+          </h3>
+          <div className="overflow-x-auto rounded-lg border" style={{ borderColor:'#2a2a2a' }}>
+            <table className="dark-table">
+              <thead><tr>
+                <th>Campaña</th>
+                <th>Marca</th>
+                <th>Canal</th>
+                <th>Período</th>
+                <th className="text-right">Gasto total</th>
+                <th className="text-right">Leads</th>
+                <th className="text-right">Ventas atrib.</th>
+                <th className="text-right">CAC</th>
+              </tr></thead>
+              <tbody>
+                {campanasFiltradas.length === 0 && (
+                  <tr><td colSpan={8} className="text-center py-8 text-gray-600">Sin campañas en ese período</td></tr>
+                )}
+                {campanasFiltradas.map(c => (
+                  <tr key={c.id} className="cursor-pointer" onClick={() => setFiltroId(c.id)}>
+                    <td>
+                      <div className="font-semibold text-white">{c.nombre}</div>
+                      {c.codigo && <div className="text-xs font-mono" style={{ color: BRAND }}>[{c.codigo}]</div>}
+                    </td>
+                    <td>{c.marca ? <span className="badge badge-gray">{c.marca}</span> : '—'}</td>
+                    <td>{c.canal ? <span className="badge badge-blue">{c.canal}</span> : '—'}</td>
+                    <td className="text-xs text-gray-500">
+                      {c.fecha_inicio || '—'} → {c.fecha_fin || '—'}
+                    </td>
+                    <td className="text-right font-bold text-white">{fmt(c.gasto_total)}</td>
+                    <td className="text-right font-bold" style={{ color:'#60a5fa' }}>{c.total_leads ?? 0}</td>
+                    <td className="text-right font-bold" style={{ color: BRAND }}>{c.total_ventas ?? 0}</td>
+                    <td className="text-right text-gray-400 text-xs">{c.total_ventas > 0 ? fmt(Math.round((c.gasto_total||0) / c.total_ventas)) : '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="text-xs text-gray-600 mt-2">Hacé clic en una campaña para ver el detalle completo.</div>
+        </div>
+      )}
+
+      {/* ── VISTA: CAMPAÑA ESPECÍFICA ── */}
+      {filtroId !== 'all' && campanaSeleccionada && (
+        <div className="space-y-5">
+
+          {/* Header de la campaña */}
+          <div className="flex items-center gap-4">
+            <button onClick={() => setFiltroId('all')}
+              className="text-xs text-gray-500 hover:text-white flex items-center gap-1">
+              ← Volver a todas
+            </button>
+            <div>
+              <h2 className="font-black text-white text-lg">{campanaSeleccionada.nombre}</h2>
+              <div className="flex items-center gap-2 mt-0.5">
+                {campanaSeleccionada.marca && <span className="badge badge-gray">{campanaSeleccionada.marca}</span>}
+                {campanaSeleccionada.canal && <span className="badge badge-blue">{campanaSeleccionada.canal}</span>}
+                {campanaSeleccionada.fecha_inicio && (
+                  <span className="text-xs text-gray-500">
+                    {campanaSeleccionada.fecha_inicio} → {campanaSeleccionada.fecha_fin || 'sin fecha fin'}
+                  </span>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* KPIs */}
+          <div className="grid grid-cols-3 gap-4">
+            <div className="rounded-xl p-4 border" style={{ background:'#1a1a1a', borderColor:'#2a2a2a' }}>
+              <div className="text-2xl font-black text-white">{fmt(campanaSeleccionada.gasto_total)}</div>
+              <div className="text-xs text-gray-500 mt-1 uppercase font-bold">Gasto total</div>
+              <div className="text-xs text-gray-600 mt-0.5">Presupuesto + gastos importados</div>
+            </div>
+            <div className="rounded-xl p-4 border" style={{ background:'#1a1a1a', borderColor:'#2a2a2a' }}>
+              <div className="text-2xl font-black" style={{ color:'#60a5fa' }}>{campanaSeleccionada.total_leads ?? 0}</div>
+              <div className="text-xs text-gray-500 mt-1 uppercase font-bold">Leads generados</div>
+              <div className="text-xs text-gray-600 mt-0.5">Con código de campaña identificado</div>
+            </div>
+            <div className="rounded-xl p-4 border" style={{ background:'#1a2e00', borderColor: BRAND }}>
+              <div className="text-2xl font-black" style={{ color: BRAND }}>{campanaSeleccionada.total_ventas ?? 0}</div>
+              <div className="text-xs mt-1 uppercase font-bold" style={{ color: BRAND }}>Ventas atribuidas</div>
+              <div className="text-xs text-gray-600 mt-0.5">
+                {campanaSeleccionada.total_ventas > 0 && campanaSeleccionada.gasto_total > 0
+                  ? `CAC: ${fmt(Math.round(campanaSeleccionada.gasto_total / campanaSeleccionada.total_ventas))}`
+                  : 'Sin ventas vinculadas aún'}
+              </div>
+            </div>
+          </div>
+
+          {/* GASTOS DESGLOSE */}
+          <div className="card">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-xs font-bold text-gray-500 uppercase tracking-widest">
+                Desglose de gastos
+              </h3>
+              <span className="font-bold text-sm" style={{ color: BRAND }}>{fmt(totalGastos)} total</span>
+            </div>
+
+            {loadingDet ? (
+              <div className="text-center py-6 text-gray-600 text-sm">Cargando...</div>
+            ) : gastos.length === 0 ? (
+              <div className="text-center py-6 text-gray-600 text-sm">
+                Sin gastos registrados para esta campaña.
+                Importalos desde la pestaña <strong>Cargar gastos</strong>.
+              </div>
+            ) : (
+              <div className="overflow-x-auto rounded-lg border" style={{ borderColor:'#2a2a2a' }}>
+                <table className="dark-table">
+                  <thead><tr>
+                    <th>Concepto</th>
+                    <th>Notas</th>
+                    <th>Fecha</th>
+                    <th className="text-right">Monto</th>
+                    <th className="text-right">% del total</th>
+                  </tr></thead>
+                  <tbody>
+                    {gastos.map(g => (
+                      <tr key={g.id}>
+                        <td className="text-white">{g.concepto || '—'}</td>
+                        <td className="text-gray-500 text-xs">{g.proveedor || '—'}</td>
+                        <td className="text-gray-500 text-xs">{g.fecha || '—'}</td>
+                        <td className="text-right font-bold" style={{ color: BRAND }}>{fmt(g.monto)}</td>
+                        <td className="text-right text-gray-500 text-xs">
+                          {totalGastos > 0 ? `${((g.monto / totalGastos) * 100).toFixed(1)}%` : '—'}
+                        </td>
+                      </tr>
+                    ))}
+                    <tr style={{ borderTop: `2px solid #2a2a2a` }}>
+                      <td colSpan={3} className="font-bold text-gray-400 text-xs uppercase">TOTAL</td>
+                      <td className="text-right font-black text-white">{fmt(totalGastos)}</td>
+                      <td className="text-right text-gray-500 text-xs">100%</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
+          {/* VENTAS VINCULADAS */}
+          <div className="card">
+            <h3 className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-4">
+              Ventas vinculadas a esta campaña
+            </h3>
+            <div className="text-xs text-gray-600 mb-3">
+              Estas son las ventas del K1/Autodealer que se cruzaron con leads de esta campaña en la página <strong className="text-gray-400">Asignados</strong>.
+            </div>
+
+            {loadingDet ? (
+              <div className="text-center py-6 text-gray-600 text-sm">Cargando...</div>
+            ) : ventas.length === 0 ? (
+              <div className="text-center py-8 text-gray-600 text-sm">
+                Sin ventas atribuidas aún. Ejecutá el cruce en <strong className="text-gray-400">Asignados</strong> para vincular ventas con leads de esta campaña.
+              </div>
+            ) : (
+              <div className="overflow-x-auto rounded-lg border" style={{ borderColor:'#2a2a2a' }}>
+                <table className="dark-table">
+                  <thead><tr>
+                    <th>PV/Solicitud</th>
+                    <th>Fecha</th>
+                    <th>Tipo</th>
+                    <th>Cliente</th>
+                    <th>DNI</th>
+                    <th>Marca</th>
+                    <th>Vendedor</th>
+                    <th>Match</th>
+                  </tr></thead>
+                  <tbody>
+                    {ventas.map(v => (
+                      <tr key={v.id}>
+                        <td className="font-mono text-xs" style={{ color: BRAND }}>{v.pv_solicitud}</td>
+                        <td className="text-gray-500 text-xs">{v.fecha ? new Date(v.fecha).toLocaleDateString('es-AR') : '—'}</td>
+                        <td><span className="badge badge-blue">{v.tipo || '—'}</span></td>
+                        <td className="font-medium text-white">{v.nombre || '—'}</td>
+                        <td className="font-mono text-xs text-gray-400">{v.dni || '—'}</td>
+                        <td>{v.marca ? <span className="badge badge-gray">{v.marca}</span> : '—'}</td>
+                        <td className="text-gray-400">{v.vendedor || '—'}</td>
+                        <td>
+                          <span className={`badge ${v.metodo_match === 'dni' ? 'badge-green' : 'badge-yellow'}`}>
+                            {v.metodo_match || '—'}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   )
 }
