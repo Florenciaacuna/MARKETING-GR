@@ -164,42 +164,18 @@ export default function Campanas() {
     }
 
     // Parser de monto robusto — maneja números reales, strings con puntos/comas
-   const parseMonto = (val) => {
-  if (val === null || val === undefined || val === '') return 0
-  if (typeof val === 'number') return Math.abs(val)
-
-  let str = String(val).replace(/[^0-9,.]/g, '') // sacar $, espacios, etc.
-  if (!str) return 0
-
-  const lastDot   = str.lastIndexOf('.')
-  const lastComma = str.lastIndexOf(',')
-
-  if (lastDot !== -1 && lastComma !== -1) {
-    // Ambos separadores: el último es el decimal
-    if (lastDot > lastComma) {
-      // 1,500.00 → formato US: coma=miles, punto=decimal
-      str = str.replace(/,/g, '')
-    } else {
-      // 1.500,00 → formato AR: punto=miles, coma=decimal
-      str = str.replace(/\./g, '').replace(',', '.')
+    const parseMonto = (val) => {
+      if (val === null || val === undefined || val === '') return 0
+      // Si ya es número JS (SheetJS con raw:true lo manda así)
+      if (typeof val === 'number') return Math.abs(val)
+      // Si es string — limpiar formato argentino
+      const str = String(val)
+        .replace(/[^0-9,.-]/g, '')   // sacar $, espacios, letras
+        .replace(/\.(?=\d{3})/g, '') // sacar punto de miles: 1.500 → 1500
+        .replace(',', '.')           // coma decimal → punto: 1500,50 → 1500.50
+      return Math.abs(parseFloat(str) || 0)
     }
-  } else if (lastDot !== -1) {
-    // Solo puntos → ver si es separador de miles (patrón: 950.000 o 1.000.000)
-    if (/^\d{1,3}(\.\d{3})+$/.test(str)) {
-      str = str.replace(/\./g, '') // punto = miles → sacar
-    }
-    // Si no cumple patrón (ej: 950.50) → lo deja como decimal
-  } else if (lastComma !== -1) {
-    // Solo comas → ver si es separador de miles (patrón: 950,000)
-    if (/^\d{1,3}(,\d{3})+$/.test(str)) {
-      str = str.replace(/,/g, '') // coma = miles → sacar
-    } else {
-      str = str.replace(',', '.') // coma = decimal → convertir
-    }
-  }
 
-  return Math.abs(parseFloat(str) || 0)
-}
     const gastos = rows.map(r => {
       const rawMonto = r['MONTO'] ?? r['monto'] ?? r['Monto'] ?? r['monto '] ?? null
       const monto    = parseMonto(rawMonto)
@@ -325,7 +301,7 @@ export default function Campanas() {
                   <th className="text-right">Gasto total</th>
                   <th className="text-right">Leads</th>
                   <th className="text-right">Ventas atrib.</th>
-                  <th className="text-right">Ingreso</th>
+                  <th className="text-right">Ingreso ✏️</th>
                   <th className="text-right">CAC</th>
                   <th className="text-right">ROI</th>
                 </tr></thead>
@@ -351,7 +327,17 @@ export default function Campanas() {
                         <td className="text-right text-gray-300 text-xs font-semibold">{fmt(c.gasto_total)}</td>
                         <td className="text-right font-bold" style={{ color:'#60a5fa' }}>{c.total_leads ?? 0}</td>
                         <td className="text-right font-bold" style={{ color: BRAND }}>{c.total_ventas ?? 0}</td>
-                        <td className="text-right text-gray-300 text-xs">{fmt(c.ingreso_total)}</td>
+                        <td className="text-right">
+                          <EditCell
+                            value={c.ingreso_total ? Math.round(c.ingreso_total).toLocaleString('es-AR') : '0'}
+                            onSave={async v => {
+                              const val = parseFloat(String(v).replace(/[^0-9,.]/g,'').replace(/\.(?=\d{3})/g,'').replace(',','.')) || 0
+                              await supabase.from('mkt_campanas').update({ ingreso_manual: val }).eq('id', c.id)
+                              load()
+                            }}
+                            type="number"
+                          />
+                        </td>
                         <td className="text-right text-gray-400 text-xs">{fmt(c.cac)}</td>
                         <td className="text-right font-bold text-sm" style={{ color: roiColor }}>
                           {roi != null ? `${roi >= 0 ? '+' : ''}${roi}%` : '—'}
@@ -362,9 +348,10 @@ export default function Campanas() {
                 </tbody>
               </table>
             </div>
-            <div className="mt-3 p-3 rounded-lg text-xs text-gray-600" style={{ background:'#111', border:'1px solid #1f1f1f' }}>
-              Las ventas atribuidas y el ingreso se calculan a partir del cruce en la pestaña <strong className="text-gray-400">Asignados</strong>.
-              Una vez ejecutado el cruce, los números acá se actualizan solos.
+            <div className="mt-3 p-3 rounded-lg text-xs text-gray-500" style={{ background:'#111', border:'1px solid #1f1f1f' }}>
+              <span style={{color:'#B5E000'}}>✏️ Ingreso:</span> hacé clic en la celda para ingresar el ingreso total de la campaña (margen auto + gestoria de las ventas atribuidas). 
+              Las <strong className="text-gray-400">Ventas atrib.</strong> se actualizan automáticamente al ejecutar el cruce en <strong className="text-gray-400">Asignados</strong>.
+              El <strong className="text-gray-400">Gasto total</strong> incluye el presupuesto + los gastos importados del Excel de Compras.
             </div>
           </div>
         </div>
