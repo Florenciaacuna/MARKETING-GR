@@ -1,71 +1,51 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { supabase } from '../lib/supabase'
-import { parseFile, normalizeK1Row, normalizePVRow } from '../lib/parsers'
+import { parseFile, normalizeDNI, normalizePhone } from '../lib/parsers'
 
 const BRAND = '#B5E000'
 const PAGE  = 50
 
-const FORMATO_K1 = [
-  { col: 'PV/SOLICITUD', desc: 'Número de preventa/solicitud — identificador único', req: true },
-  { col: 'FECHA', desc: 'Fecha de la operación', req: true },
-  { col: 'TIPO', desc: '0KM / USADO / PLAN', req: true },
-  { col: 'NOMBRE', desc: 'Nombre del cliente', req: false },
-  { col: 'DNI', desc: 'Documento — clave principal para el cruce', req: true },
-  { col: 'TELEFONO PERSONAL', desc: 'Teléfono — segunda clave para el cruce', req: true },
-  { col: 'CELULAR PERSONAL', desc: 'Celular — clave alternativa', req: true },
-  { col: 'VENDEDOR', desc: 'Asesor que cerró la venta', req: false },
-  { col: 'Marca', desc: 'KIARA / CIARA / PEARA / MOVILIS', req: false },
-]
-
-const FORMATO_PV = [
-  { col: 'PV/SOLICITUD', desc: 'Número de preventa', req: true },
-  { col: 'FECHA', desc: 'Fecha de la operación', req: true },
-  { col: 'TIPO', desc: 'Tipo de operación', req: true },
-  { col: 'NOMBRE', desc: 'Nombre del cliente', req: false },
-  { col: 'DNI', desc: 'Documento — clave para el cruce', req: true },
-  { col: 'TELEFONO PERSONAL', desc: 'Teléfono del cliente', req: true },
-  { col: 'CELULAR PERSONAL', desc: 'Celular del cliente', req: true },
-  { col: 'VENDEDOR', desc: 'Asesor', req: false },
-  { col: 'UNIDAD', desc: 'Marca / línea del vehículo', req: false },
-]
-
-function DropZone({ label, sublabel, badge, file, onFile }) {
-  const ref  = useRef()
-  const [drag, setDrag] = useState(false)
-  return (
-    <div
-      className={`dropzone ${drag ? 'active' : ''} ${file ? 'filled' : ''}`}
-      onDragOver={e => { e.preventDefault(); setDrag(true) }}
-      onDragLeave={() => setDrag(false)}
-      onDrop={e => { e.preventDefault(); setDrag(false); const f = e.dataTransfer.files[0]; if(f) onFile(f) }}
-      onClick={() => ref.current.click()}
-    >
-      <input ref={ref} type="file" accept=".xls,.xlsx,.csv" className="hidden"
-        onChange={e => e.target.files[0] && onFile(e.target.files[0])} />
-      <div className="flex justify-center mb-1">
-        <span className="badge badge-blue text-xs">{badge}</span>
-      </div>
-      <div className="font-semibold text-sm text-white">{label}</div>
-      <div className="text-xs text-gray-500 mt-0.5">{sublabel}</div>
-      {file
-        ? <div className="text-xs mt-1 truncate" style={{ color: BRAND }}>{file.name}</div>
-        : <div className="text-xs mt-1 text-gray-600">Clic o arrastrar archivo .xls</div>}
-    </div>
-  )
+// Normalización unificada — mismo formato para K1 y Autodealer
+function normalizeVentaRow(row) {
+  return {
+    pv_solicitud:      row['PV/SOLICITUD'] || null,
+    fecha:             row['FECHA'] || row['Fecha'] || null,
+    tipo:              row['TIPO'] || null,
+    nombre:            row['NOMBRE'] || null,
+    dni:               normalizeDNI(row['DNI']),
+    telefono_personal: normalizePhone(row['TELEFONO PERSONAL'] || row['Telefono Personal']),
+    celular_personal:  normalizePhone(row['CELULAR PERSONAL'] || row['Celular Personal']),
+    vendedor:          row['VENDEDOR'] || row['Vendedor'] || null,
+    marca:             row['Marca'] || row['MARCA'] || row['UNIDAD'] || null,
+    fuente:            row['UNIDAD'] ? 'autodealer' : 'k1',
+  }
 }
 
-export default function Ventas() {
-  const [ventas,   setVentas]   = useState([])
-  const [total,    setTotal]    = useState(0)
-  const [page,     setPage]     = useState(0)
-  const [loading,  setLoading]  = useState(true)
-  const [filters,  setFilters]  = useState({ search: '', tipo: '', marca: '', fuente: '' })
+const FORMATO = [
+  { col: 'PV/SOLICITUD', desc: 'Número de preventa — identificador único',   req: true  },
+  { col: 'FECHA',        desc: 'Fecha de la operación',                       req: true  },
+  { col: 'TIPO',         desc: '0KM / USADO / PLAN AHORRO',                  req: false },
+  { col: 'NOMBRE',       desc: 'Nombre del cliente',                          req: false },
+  { col: 'DNI',          desc: 'Documento — clave principal para el cruce',   req: true  },
+  { col: 'TELEFONO PERSONAL', desc: 'Teléfono — segunda clave para el cruce', req: true  },
+  { col: 'CELULAR PERSONAL',  desc: 'Celular — clave alternativa',            req: false },
+  { col: 'VENDEDOR',     desc: 'Asesor que cerró la operación',               req: false },
+  { col: 'Marca / UNIDAD', desc: 'KIARA / CIARA / PEARA / MOVILIS',          req: false },
+]
 
-  const [fileK1,   setFileK1]   = useState(null)
-  const [filePV,   setFilePV]   = useState(null)
-  const [uploading,setUploading]= useState(false)
-  const [result,   setResult]   = useState(null)
-  const [showFmt,  setShowFmt]  = useState(null) // 'k1' | 'pv' | null
+export default function Ventas() {
+  const [ventas,    setVentas]    = useState([])
+  const [total,     setTotal]     = useState(0)
+  const [page,      setPage]      = useState(0)
+  const [loading,   setLoading]   = useState(true)
+  const [filters,   setFilters]   = useState({ search: '', tipo: '', marca: '', fuente: '' })
+
+  const [files,     setFiles]     = useState([])
+  const [dragging,  setDragging]  = useState(false)
+  const [uploading, setUploading] = useState(false)
+  const [result,    setResult]    = useState(null)
+  const [showFmt,   setShowFmt]   = useState(false)
+  const fileRef = useRef()
 
   const loadVentas = useCallback(async () => {
     setLoading(true)
@@ -74,10 +54,10 @@ export default function Ventas() {
       .order('fecha', { ascending: false })
       .range(page * PAGE, (page + 1) * PAGE - 1)
 
-    if (filters.fuente) q = q.eq('fuente', filters.fuente)
-    if (filters.tipo)   q = q.eq('tipo', filters.tipo)
-    if (filters.marca)  q = q.eq('marca', filters.marca)
-    if (filters.search) q = q.or(`nombre.ilike.%${filters.search}%,dni.eq.${filters.search},pv_solicitud.ilike.%${filters.search}%`)
+    if (filters.fuente)  q = q.eq('fuente', filters.fuente)
+    if (filters.tipo)    q = q.eq('tipo', filters.tipo)
+    if (filters.marca)   q = q.eq('marca', filters.marca)
+    if (filters.search)  q = q.or(`nombre.ilike.%${filters.search}%,dni.eq.${filters.search},pv_solicitud.ilike.%${filters.search}%`)
 
     const { data, count } = await q
     setVentas(data || [])
@@ -87,20 +67,35 @@ export default function Ventas() {
 
   useEffect(() => { loadVentas() }, [loadVentas])
 
+  const addFiles = (newFiles) => {
+    setFiles(prev => {
+      const existing = new Set(prev.map(f => f.name))
+      const toAdd = Array.from(newFiles).filter(f => !existing.has(f.name))
+      return [...prev, ...toAdd]
+    })
+    setResult(null)
+  }
+
   async function procesar() {
-    if (!fileK1 && !filePV) { alert('Seleccioná al menos un archivo'); return }
+    if (files.length === 0) { alert('Seleccioná al menos un archivo'); return }
     setUploading(true); setResult(null)
-    const all = []
+    let procesados = 0; let guardados = 0; let errores = 0
 
-    if (fileK1) { const { data } = await parseFile(fileK1); all.push(...data.map(normalizeK1Row)) }
-    if (filePV) { const { data } = await parseFile(filePV); all.push(...data.map(normalizePVRow)) }
+    for (const file of files) {
+      const { data: rows } = await parseFile(file)
+      procesados += rows.length
+      const valid = rows.map(normalizeVentaRow).filter(v => v.pv_solicitud)
 
-    const valid = all.filter(v => v.pv_solicitud)
-    if (valid.length > 0) {
-      await supabase.from('mkt_ventas').upsert(valid, { onConflict: 'pv_solicitud,fuente', ignoreDuplicates: false })
+      if (valid.length > 0) {
+        const { error } = await supabase.from('mkt_ventas')
+          .upsert(valid, { onConflict: 'pv_solicitud,fuente', ignoreDuplicates: false })
+        if (error) errores += valid.length
+        else guardados += valid.length
+      }
     }
-    setResult({ procesados: all.length, nuevos: valid.length })
-    setUploading(false); setFileK1(null); setFilePV(null)
+
+    setResult({ procesados, guardados, errores, archivos: files.length })
+    setUploading(false); setFiles([])
     loadVentas()
   }
 
@@ -114,65 +109,86 @@ export default function Ventas() {
         <div className="flex items-center justify-between mb-4">
           <div>
             <h2 className="font-bold text-white text-base">Cargar ventas y preventas</h2>
-            <p className="text-xs text-gray-500 mt-0.5">Exportaciones del K1 y del sistema Autodealer</p>
+            <p className="text-xs text-gray-500 mt-0.5">
+              Mismo formato para K1 y Autodealer. Podés subir varios archivos a la vez.
+            </p>
           </div>
+          <button onClick={() => setShowFmt(!showFmt)} className="btn-ghost text-xs">
+            {showFmt ? 'Ocultar formato' : 'Ver formato esperado'}
+          </button>
         </div>
 
-        <div className="grid grid-cols-2 gap-3 mb-4">
-          <div>
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-xs font-semibold text-gray-400">Ventas K1</span>
-              <button onClick={() => setShowFmt(showFmt === 'k1' ? null : 'k1')} className="text-xs" style={{ color: BRAND }}>
-                {showFmt === 'k1' ? 'Ocultar formato' : 'Ver formato'}
-              </button>
-            </div>
-            {showFmt === 'k1' && (
-              <div className="mb-2 rounded-lg overflow-hidden border text-xs" style={{ borderColor: '#2a2a2a' }}>
-                <table className="dark-table">
-                  <thead><tr><th>Columna</th><th>Requerida</th></tr></thead>
-                  <tbody>{FORMATO_K1.map(f=>(
-                    <tr key={f.col}>
-                      <td><span className="font-mono" style={{color:BRAND}}>{f.col}</span> — {f.desc}</td>
-                      <td><span className={`badge ${f.req?'badge-green':'badge-gray'}`}>{f.req?'Sí':'No'}</span></td>
-                    </tr>
-                  ))}</tbody>
-                </table>
-              </div>
-            )}
-            <DropZone label="Ventas K1" sublabel="Excel descargado del K1" badge="K1" file={fileK1} onFile={setFileK1} />
+        {/* Formato */}
+        {showFmt && (
+          <div className="mb-4 rounded-lg overflow-hidden border" style={{ borderColor:'#2a2a2a' }}>
+            <table className="dark-table text-xs">
+              <thead><tr><th>Columna</th><th>Descripción</th><th>Requerida</th></tr></thead>
+              <tbody>
+                {FORMATO.map(f => (
+                  <tr key={f.col}>
+                    <td><span className="font-mono" style={{ color: BRAND }}>{f.col}</span></td>
+                    <td className="text-gray-400">{f.desc}</td>
+                    <td><span className={`badge ${f.req ? 'badge-green' : 'badge-gray'}`}>{f.req ? 'Sí' : 'No'}</span></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
+        )}
 
-          <div>
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-xs font-semibold text-gray-400">PV Vinculadas — Autodealer</span>
-              <button onClick={() => setShowFmt(showFmt === 'pv' ? null : 'pv')} className="text-xs" style={{ color: BRAND }}>
-                {showFmt === 'pv' ? 'Ocultar formato' : 'Ver formato'}
-              </button>
-            </div>
-            {showFmt === 'pv' && (
-              <div className="mb-2 rounded-lg overflow-hidden border text-xs" style={{ borderColor: '#2a2a2a' }}>
-                <table className="dark-table">
-                  <thead><tr><th>Columna</th><th>Requerida</th></tr></thead>
-                  <tbody>{FORMATO_PV.map(f=>(
-                    <tr key={f.col}>
-                      <td><span className="font-mono" style={{color:BRAND}}>{f.col}</span> — {f.desc}</td>
-                      <td><span className={`badge ${f.req?'badge-green':'badge-gray'}`}>{f.req?'Sí':'No'}</span></td>
-                    </tr>
-                  ))}</tbody>
-                </table>
-              </div>
-            )}
-            <DropZone label="PV Vinculadas" sublabel="Autodealer — preventas" badge="Autodealer" file={filePV} onFile={setFilePV} />
+        {/* Drop zone */}
+        <div
+          className={`dropzone mb-3 ${dragging ? 'active' : ''} ${files.length > 0 ? 'filled' : ''}`}
+          onDragOver={e => { e.preventDefault(); setDragging(true) }}
+          onDragLeave={() => setDragging(false)}
+          onDrop={e => { e.preventDefault(); setDragging(false); addFiles(e.dataTransfer.files) }}
+          onClick={() => fileRef.current.click()}
+        >
+          <input ref={fileRef} type="file" accept=".xls,.xlsx,.csv" multiple className="hidden"
+            onChange={e => addFiles(e.target.files)} />
+          <div className="text-2xl mb-1">{files.length > 0 ? '✓' : '↑'}</div>
+          <div className="font-semibold text-sm text-white">
+            {files.length > 0 ? `${files.length} archivo${files.length > 1 ? 's' : ''} seleccionado${files.length > 1 ? 's' : ''}` : 'Subir archivos de ventas'}
           </div>
+          <div className="text-xs text-gray-500 mt-0.5">
+            K1 · Autodealer · Podés seleccionar varios a la vez
+          </div>
+          {files.length > 0 && (
+            <div className="mt-2 space-y-0.5">
+              {files.map(f => (
+                <div key={f.name} className="text-xs truncate" style={{ color: BRAND }}>• {f.name}</div>
+              ))}
+            </div>
+          )}
         </div>
+
+        {/* Archivos seleccionados con opción de quitar */}
+        {files.length > 0 && (
+          <div className="flex flex-wrap gap-2 mb-3">
+            {files.map(f => (
+              <div key={f.name} className="flex items-center gap-1.5 px-2 py-1 rounded-lg text-xs"
+                style={{ background:'#1a1a1a', border:'1px solid #2a2a2a' }}>
+                <span className="text-gray-300 truncate max-w-[160px]">{f.name}</span>
+                <button
+                  onClick={() => setFiles(prev => prev.filter(x => x.name !== f.name))}
+                  className="text-gray-600 hover:text-red-400 transition-colors ml-1">✕</button>
+              </div>
+            ))}
+          </div>
+        )}
 
         <div className="flex items-center gap-3">
-          <button onClick={procesar} disabled={uploading || (!fileK1 && !filePV)} className="btn-primary">
-            {uploading ? 'Procesando...' : 'Procesar archivos'}
+          <button onClick={procesar} disabled={uploading || files.length === 0} className="btn-primary">
+            {uploading ? 'Procesando...' : `Procesar${files.length > 1 ? ` ${files.length} archivos` : ''}`}
           </button>
+          {files.length > 0 && !uploading && (
+            <button onClick={() => setFiles([])} className="btn-ghost text-xs">Limpiar</button>
+          )}
           {result && (
             <div className="text-xs text-gray-400">
-              <span style={{ color: BRAND }}>{result.nuevos}</span> registros guardados
+              <span style={{ color: BRAND }}>{result.guardados}</span> registros guardados
+              de {result.procesados} leídos en {result.archivos} archivo{result.archivos > 1 ? 's' : ''}
+              {result.errores > 0 && <span className="text-red-400 ml-2">· {result.errores} errores</span>}
             </div>
           )}
         </div>
@@ -182,7 +198,8 @@ export default function Ventas() {
       <div className="card">
         <div className="flex items-center justify-between mb-4">
           <h2 className="font-bold text-white text-base">
-            Ventas y preventas <span className="text-gray-500 font-normal text-sm ml-2">{total.toLocaleString('es-AR')} registros</span>
+            Ventas y preventas
+            <span className="text-gray-500 font-normal text-sm ml-2">{total.toLocaleString('es-AR')} registros</span>
           </h2>
         </div>
 
@@ -194,38 +211,53 @@ export default function Ventas() {
             <option value="k1">K1</option>
             <option value="autodealer">Autodealer</option>
           </select>
-          <select className="input-dark w-32" value={filters.tipo} onChange={e => sf('tipo', e.target.value)}>
+          <select className="input-dark w-36" value={filters.tipo} onChange={e => sf('tipo', e.target.value)}>
             <option value="">Tipo: todos</option>
-            <option>0KM</option><option>USADO</option><option>PLAN</option>
+            <option>0KM</option><option>USADO</option><option>PLAN AHORRO</option>
           </select>
           <select className="input-dark w-32" value={filters.marca} onChange={e => sf('marca', e.target.value)}>
             <option value="">Marca: todas</option>
             <option>KIARA</option><option>CIARA</option><option>PEARA</option><option>MOVILIS</option>
           </select>
           <button onClick={() => { setFilters({ search:'', tipo:'', marca:'', fuente:'' }); setPage(0) }}
-            className="text-xs text-gray-600 hover:text-gray-300">Limpiar</button>
+            className="text-xs text-gray-600 hover:text-gray-300 transition-colors">
+            Limpiar
+          </button>
         </div>
 
-        <div className="overflow-x-auto rounded-lg border" style={{ borderColor: '#2a2a2a' }}>
+        <div className="overflow-x-auto rounded-lg border" style={{ borderColor:'#2a2a2a' }}>
           <table className="dark-table">
             <thead><tr>
               <th>PV/Solicitud</th><th>Fecha</th><th>Tipo</th><th>Cliente</th>
-              <th>DNI</th><th>Teléfono</th><th>Vendedor</th><th>Marca</th><th>Sistema</th><th>Lead</th>
+              <th>DNI</th><th>Teléfono</th><th>Vendedor</th><th>Marca</th>
+              <th>Sistema</th><th>Lead</th>
             </tr></thead>
             <tbody>
               {loading && <tr><td colSpan={10} className="text-center py-8 text-gray-600">Cargando...</td></tr>}
-              {!loading && ventas.length === 0 && <tr><td colSpan={10} className="text-center py-10 text-gray-600">Sin resultados. Cargá las ventas arriba.</td></tr>}
+              {!loading && ventas.length === 0 && (
+                <tr><td colSpan={10} className="text-center py-10 text-gray-600">
+                  Sin resultados. Subí los archivos de ventas arriba.
+                </td></tr>
+              )}
               {ventas.map(v => (
                 <tr key={v.id}>
                   <td className="font-mono text-xs" style={{ color: BRAND }}>{v.pv_solicitud}</td>
-                  <td className="text-gray-500 text-xs">{v.fecha ? new Date(v.fecha).toLocaleDateString('es-AR') : '—'}</td>
+                  <td className="text-gray-500 text-xs">
+                    {v.fecha ? new Date(v.fecha).toLocaleDateString('es-AR') : '—'}
+                  </td>
                   <td><span className="badge badge-blue">{v.tipo || '—'}</span></td>
                   <td className="font-medium text-white">{v.nombre || '—'}</td>
                   <td className="font-mono text-xs text-gray-400">{v.dni || '—'}</td>
-                  <td className="font-mono text-xs text-gray-400">{v.telefono_personal || v.celular_personal || '—'}</td>
+                  <td className="font-mono text-xs text-gray-400">
+                    {v.telefono_personal || v.celular_personal || '—'}
+                  </td>
                   <td className="text-gray-400">{v.vendedor || '—'}</td>
                   <td>{v.marca ? <span className="badge badge-gray">{v.marca}</span> : '—'}</td>
-                  <td><span className={`badge ${v.fuente === 'k1' ? 'badge-green' : 'badge-blue'}`}>{v.fuente}</span></td>
+                  <td>
+                    <span className={`badge ${v.fuente === 'k1' ? 'badge-green' : 'badge-blue'}`}>
+                      {v.fuente}
+                    </span>
+                  </td>
                   <td>
                     {v.lead_id
                       ? <span className="badge badge-green">Sí — {v.metodo_match}</span>
@@ -238,10 +270,16 @@ export default function Ventas() {
         </div>
 
         <div className="flex items-center justify-between mt-3">
-          <span className="text-xs text-gray-600">{page*PAGE+1}–{Math.min((page+1)*PAGE,total)} de {total.toLocaleString('es-AR')}</span>
+          <span className="text-xs text-gray-600">
+            {page*PAGE+1}–{Math.min((page+1)*PAGE, total)} de {total.toLocaleString('es-AR')}
+          </span>
           <div className="flex gap-2">
-            <button onClick={() => setPage(p=>Math.max(0,p-1))} disabled={page===0} className="btn-ghost text-xs">← Anterior</button>
-            <button onClick={() => setPage(p=>p+1)} disabled={(page+1)*PAGE>=total} className="btn-ghost text-xs">Siguiente →</button>
+            <button onClick={() => setPage(p => Math.max(0,p-1))} disabled={page===0} className="btn-ghost text-xs">
+              ← Anterior
+            </button>
+            <button onClick={() => setPage(p => p+1)} disabled={(page+1)*PAGE>=total} className="btn-ghost text-xs">
+              Siguiente →
+            </button>
           </div>
         </div>
       </div>
