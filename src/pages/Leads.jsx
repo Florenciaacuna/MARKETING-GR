@@ -119,15 +119,27 @@ ${lead.consulta.slice(0, 800)}`
     setUploading(true); setResult(null)
     const { data: rows } = await parseFile(file)
     const cols = Object.keys(rows[0] || {})
-    const validos = rows.map(normalizeFacilitadoresRow).filter(l => l.nro_tramite)
+    const mapeados = rows.map(normalizeFacilitadoresRow)
+    const validos  = mapeados.filter(l => l.nro_tramite)
+
+    // Diagnóstico: cuántos tienen cada campo clave
+    const conDNI   = mapeados.filter(l => l.dni).length
+    const conTel   = mapeados.filter(l => l.telefono).length
+    const conEmail = mapeados.filter(l => l.email).length
+    const primerID = rows[0] ? (rows[0]['ID'] || rows[0]['JOB_SEQ'] || '(vacío)') : '—'
+
     let guardados = 0; let errorMsg = null
     if (validos.length > 0) {
-      const { error } = await supabase.from('mkt_leads')
-        .upsert(validos, { onConflict: 'nro_tramite,fuente', ignoreDuplicates: false })
-      if (error) errorMsg = error.message
-      else guardados = validos.length
+      // Insertar en lotes de 500
+      for (let i = 0; i < validos.length; i += 500) {
+        const batch = validos.slice(i, i + 500)
+        const { error } = await supabase.from('mkt_leads')
+          .upsert(batch, { onConflict: 'nro_tramite,fuente', ignoreDuplicates: false })
+        if (error) errorMsg = error.message
+        else guardados += batch.length
+      }
     }
-    setResult({ procesados: rows.length, guardados, error: errorMsg, cols })
+    setResult({ procesados: rows.length, guardados, error: errorMsg, cols, conDNI, conTel, conEmail, primerID, conNro: validos.length })
     setUploading(false); setFile(null)
     if (guardados > 0) loadLeads()
   }
@@ -211,13 +223,26 @@ ${lead.consulta.slice(0, 800)}`
               Quitar archivo
             </button>
           )}
-          {result && !result.error && (
-            <span className="text-xs text-gray-400">
-              <span style={{ color: BRAND }}>{result.guardados}</span> leads guardados de {result.procesados} leídos
-            </span>
-          )}
-          {result?.error && (
-            <span className="text-xs text-red-400">{result.error}</span>
+          {result && (
+            <div className="text-xs space-y-1">
+              {result.guardados > 0
+                ? <div><span style={{ color: BRAND }}>{result.guardados}</span> <span className="text-gray-400">leads guardados de {result.procesados} leídos</span></div>
+                : <div className="text-yellow-400">⚠ 0 guardados de {result.procesados} leídos</div>
+              }
+              {result.error && <div className="text-red-400">{result.error}</div>}
+              <div className="text-gray-600">
+                Con nro_tramite: <span className="text-gray-400">{result.conNro}</span> ·
+                Con DNI: <span className="text-gray-400">{result.conDNI}</span> ·
+                Con tel: <span className="text-gray-400">{result.conTel}</span> ·
+                Con email: <span className="text-gray-400">{result.conEmail}</span>
+              </div>
+              <div className="text-gray-600">
+                Primer valor en ID: <span className="font-mono" style={{ color: BRAND }}>{result.primerID}</span>
+              </div>
+              <div className="text-gray-600">
+                Columnas: <span className="text-gray-500">{result.cols?.join(', ')}</span>
+              </div>
+            </div>
           )}
         </div>
 
