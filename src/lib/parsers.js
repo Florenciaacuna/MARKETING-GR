@@ -74,11 +74,19 @@ export function normalizeDNI(dni) {
 
 export function normalizePhone(phone) {
   if (!phone) return null
-  let digits = String(phone).replace(/\D/g, '')
+  let str = String(phone).trim()
+
+  // Notación científica: 5.43816E+11 → 543816000000
+  if (/^[\d.]+[eE][+\-]?\d+$/.test(str)) {
+    const num = parseFloat(str)
+    if (!isNaN(num)) str = Math.round(num).toString()
+  }
+
+  let digits = str.replace(/\D/g, '')
   if (!digits) return null
   if (digits.startsWith('54') && digits.length > 10) digits = digits.slice(2)
-  if (digits.startsWith('9') && digits.length > 10) digits = digits.slice(1)
-  if (digits.startsWith('0')) digits = digits.slice(1)
+  if (digits.startsWith('9')  && digits.length > 10) digits = digits.slice(1)
+  if (digits.startsWith('0'))                         digits = digits.slice(1)
   digits = digits.replace(/^(\d{3,4})15(\d{6,7})$/, '$1$2')
   const last10 = digits.slice(-10)
   return last10.length >= 8 ? last10 : null
@@ -122,6 +130,51 @@ export function extractCampaignCode(consulta) {
   return null
 }
 
+
+// ── EXTRACCIÓN DESDE COLUMNA CONSULTA ────────────────────
+
+// Extraer teléfono desde texto libre (WhatsApp, formularios, chats)
+function extractPhoneFromConsulta(text) {
+  if (!text) return null
+  const t = String(text)
+  // phone_number = +543816090401
+  const m1 = t.match(/phone_number\s*[=:]\s*\+?([\d\s\-]{8,15})/i)
+  if (m1) return normalizePhone(m1[1])
+  // wa.me/541131557987
+  const m2 = t.match(/wa\.me\/\+?(\d{10,13})/i)
+  if (m2) return normalizePhone(m2[1])
+  // +54 seguido de dígitos (internacional)
+  const m3 = t.match(/\+54[\s\-]?9?[\s\-]?(\d{2,4})[\s\-]?(\d{6,8})/)
+  if (m3) return normalizePhone('+54' + m3[1] + m3[2])
+  // teléfono: XXXXXXXX
+  const m4 = t.match(/tel[éeEÉ]fono[:\s]+\+?([\d\s\-]{8,15})/i)
+  if (m4) return normalizePhone(m4[1])
+  return null
+}
+
+// Extraer email desde texto libre
+function extractEmailFromConsulta(text) {
+  if (!text) return null
+  const t = String(text)
+  // email = xxx@xxx.com
+  const m1 = t.match(/email\s*[=:]\s*([a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,})/i)
+  if (m1) return m1[1].toLowerCase().trim()
+  // cualquier email en el texto
+  const m2 = t.match(/([a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,})/)
+  if (m2) return m2[1].toLowerCase().trim()
+  return null
+}
+
+// Extraer DNI desde texto libre
+function extractDNIFromConsulta(text) {
+  if (!text) return null
+  const t = String(text)
+  // dni = 40436959
+  const m1 = t.match(/dni\s*[=:]\s*(\d{7,8})/i)
+  if (m1) return m1[1]
+  return null
+}
+
 // ── NORMALIZADORES POR TIPO DE REPORTE ───────────────────
 
 // REPORTE LEADS POR FACILITADORES
@@ -134,20 +187,31 @@ export function normalizeFacilitadoresRow(row) {
     (row['campania'] && String(row['campania']).trim() !== '0'
       ? String(row['campania']).trim().toLowerCase()
       : null)
+  // Extraer datos adicionales del texto de Consulta como fallback
+  const consulta    = row['Consulta'] || ''
+  const telConsulta = extractPhoneFromConsulta(consulta)
+  const mailConsulta = extractEmailFromConsulta(consulta)
+  const dniConsulta  = extractDNIFromConsulta(consulta)
+
+  // Prioridad: columna estructurada → extraído de Consulta
+  const dniFinal   = normalizeDNI(row['DNI']) || dniConsulta
+  const telFinal   = normalizePhone(fullPhone) || telConsulta
+  const emailFinal = row['Email'] || mailConsulta
+
   return {
     nro_tramite:    row['ID'] || row['JOB_SEQ'] || null,
     fecha_consulta: normalizeDatetime(row['Fecha de consulta']),
     apellido:       row['Apellido'] || null,
     nombre:         row['Nombre'] || null,
-    dni:            normalizeDNI(row['DNI']),
-    telefono:       normalizePhone(fullPhone),
+    dni:            dniFinal,
+    telefono:       telFinal,
     celular:        null,
-    email:          row['Email'] || null,
+    email:          emailFinal,
     origen:         row['Empresa'] || null,
     sub_origen:     row['Rubro'] || null,
     canal:          row['websiteName'] || row['entryMethod'] || row['clave_atencion'] || null,
     codigo_campana: codigoCampana,
-    consulta:       row['Consulta'] || null,
+    consulta:       consulta || null,
     website_name:   row['websiteName'] || null,
     entry_method:   row['entryMethod'] || null,
     vendedor:       row['USUARIO_DERIVO'] || null,
