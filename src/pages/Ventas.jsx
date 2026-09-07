@@ -80,11 +80,10 @@ export default function Ventas() {
     if (filePV) {
       const { data: rows } = await parseFile(filePV)
       procesados += rows.length
-      const rawValidos = rows.map(normalizePVRow).filter(v => v.pv_solicitud)
-// Desduplicar — si hay dos filas con el mismo PV, quedarse con la última
-const visto = new Map()
-rawValidos.forEach(v => visto.set(v.pv_solicitud + '|' + v.fuente, v))
-const validos = Array.from(visto.values())
+      const rawPV = rows.map(normalizePVRow).filter(v => v.pv_solicitud)
+      const mapPV = new Map()
+      rawPV.forEach(v => mapPV.set(v.pv_solicitud + '|' + v.fuente, v))
+      const validos = Array.from(mapPV.values())
       if (validos.length > 0) {
         for (let i = 0; i < validos.length; i += 200) {
           const batch = validos.slice(i, i+200)
@@ -100,10 +99,13 @@ const validos = Array.from(visto.values())
     if (fileDer) {
       const { data: rows } = await parseFile(fileDer)
       procesados += rows.length
-      const validos = rows.map(normalizeDerivadoVentaRow).filter(v => v.pv_solicitud)
-      if (validos.length > 0) {
-        for (let i = 0; i < validos.length; i += 200) {
-          const batch = validos.slice(i, i+200)
+      const rawDer = rows.map(normalizeDerivadoVentaRow).filter(v => v.pv_solicitud)
+      const mapDer = new Map()
+      rawDer.forEach(v => mapDer.set(v.pv_solicitud + '|' + v.fuente, v))
+      const validosDer = Array.from(mapDer.values())
+      if (validosDer.length > 0) {
+        for (let i = 0; i < validosDer.length; i += 200) {
+          const batch = validosDer.slice(i, i+200)
           const { error } = await supabase.from('mkt_ventas')
             .upsert(batch, { onConflict: 'pv_solicitud,fuente', ignoreDuplicates: false })
           if (error) errorMsg = (errorMsg || '') + ' | ' + error.message
