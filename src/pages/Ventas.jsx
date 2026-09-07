@@ -80,7 +80,11 @@ export default function Ventas() {
     if (filePV) {
       const { data: rows } = await parseFile(filePV)
       procesados += rows.length
-      const validos = rows.map(normalizePVRow).filter(v => v.pv_solicitud)
+      const rawValidos = rows.map(normalizePVRow).filter(v => v.pv_solicitud)
+// Desduplicar — si hay dos filas con el mismo PV, quedarse con la última
+const visto = new Map()
+rawValidos.forEach(v => visto.set(v.pv_solicitud + '|' + v.fuente, v))
+const validos = Array.from(visto.values())
       if (validos.length > 0) {
         for (let i = 0; i < validos.length; i += 200) {
           const batch = validos.slice(i, i+200)
