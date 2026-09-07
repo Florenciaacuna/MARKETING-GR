@@ -18,6 +18,84 @@ export default function Leads() {
   const [showFmt,   setShowFmt]   = useState(false)
   const fileRef = useRef()
 
+
+  // ── AGENTE IA — Enriquecer desde CONSULTA ────────────────
+  const [enriching,   setEnriching]   = useState(false)
+  const [enrichResult,setEnrichResult]= useState(null)
+
+  async function enriquecerConIA() {
+    setEnriching(true)
+    setEnrichResult(null)
+
+    // Traer leads con CONSULTA pero sin DNI o teléfono
+    const { data: leadsVacios } = await supabase
+      .from('mkt_leads')
+      .select('id, consulta, dni, telefono, email')
+      .not('consulta', 'is', null)
+      .limit(200)  // procesar de a 200 por vez
+
+    if (!leadsVacios || leadsVacios.length === 0) {
+      setEnrichResult('No hay leads con CONSULTA para procesar.')
+      setEnriching(false)
+      return
+    }
+
+    // Filtrar los que les falta algún dato clave
+    const aEnriquecer = leadsVacios.filter(l =>
+      !l.dni || !l.telefono || !l.email
+    )
+
+    if (aEnriquecer.length === 0) {
+      setEnrichResult('Todos los leads ya tienen DNI, teléfono y email completos.')
+      setEnriching(false)
+      return
+    }
+
+    // Llamar a Claude para extraer datos de cada CONSULTA
+    let actualizados = 0
+    for (const lead of aEnriquecer) {
+      try {
+        const resp = await fetch('https://api.anthropic.com/v1/messages', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            model: 'claude-sonnet-4-6',
+            max_tokens: 300,
+            messages: [{
+              role: 'user',
+              content: `Extraé del siguiente texto estos datos si están presentes. Respondé SOLO con JSON válido, sin texto adicional:
+{"dni": "solo dígitos o null", "telefono": "con código de país si tiene, o null", "email": "email o null"}
+
+Texto:
+${lead.consulta.slice(0, 800)}`
+            }]
+          })
+        })
+
+        const data = await resp.json()
+        const raw  = data.content?.[0]?.text || '{}'
+        const clean = raw.replace(/```json|```/g, '').trim()
+        const extracted = JSON.parse(clean)
+
+        const updates = {}
+        if (!lead.dni    && extracted.dni    && extracted.dni !== 'null')    updates.dni      = extracted.dni.replace(/\D/g, '')
+        if (!lead.telefono && extracted.telefono && extracted.telefono !== 'null') updates.telefono = extracted.telefono
+        if (!lead.email  && extracted.email  && extracted.email !== 'null')  updates.email    = extracted.email.toLowerCase()
+
+        if (Object.keys(updates).length > 0) {
+          await supabase.from('mkt_leads').update(updates).eq('id', lead.id)
+          actualizados++
+        }
+      } catch(e) {
+        console.error('Error procesando lead:', lead.id, e)
+      }
+    }
+
+    setEnrichResult(`Procesados: ${aEnriquecer.length} leads · Actualizados: ${actualizados} con datos nuevos`)
+    setEnriching(false)
+    loadLeads()
+  }
+
   const loadLeads = useCallback(async () => {
     setLoading(true)
     let q = supabase.from('mkt_leads')
@@ -141,6 +219,31 @@ export default function Leads() {
           {result?.error && (
             <span className="text-xs text-red-400">{result.error}</span>
           )}
+        </div>
+
+        {/* Botón IA */}
+        <div className="mt-5 pt-4 border-t" style={{ borderColor: '#2a2a2a' }}>
+          <div className="flex items-start gap-4">
+            <div className="flex-1">
+              <div className="text-xs font-bold text-white mb-0.5">Enriquecer leads con IA</div>
+              <div className="text-xs text-gray-500">
+                Claude lee la columna CONSULTA de cada lead y extrae DNI, teléfono y email
+                cuando la fila tiene esos campos vacíos. Mejora el cruce en Asignados.
+                Prioridad: DNI → teléfono → email.
+              </div>
+              {enrichResult && (
+                <div className="mt-2 text-xs" style={{ color: BRAND }}>{enrichResult}</div>
+              )}
+            </div>
+            <button
+              onClick={enriquecerConIA}
+              disabled={enriching}
+              className="btn-primary text-xs whitespace-nowrap flex-shrink-0"
+              style={{ background: enriching ? '#333' : 'linear-gradient(135deg, #B5E000, #8BC34A)' }}
+            >
+              {enriching ? 'Procesando con IA...' : '✦ Enriquecer con IA'}
+            </button>
+          </div>
         </div>
       </div>
 
