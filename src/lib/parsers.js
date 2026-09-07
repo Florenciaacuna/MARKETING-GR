@@ -1,5 +1,7 @@
 import * as XLSX from 'xlsx'
 
+// ── LECTURA DE ARCHIVO ────────────────────────────────────
+
 async function readFileText(file) {
   const buffer = await file.arrayBuffer()
   try { return new TextDecoder('windows-1252').decode(buffer) }
@@ -63,6 +65,8 @@ export async function parseFile(file) {
   return { data: [], format: 'unknown' }
 }
 
+// ── NORMALIZACIÓN ─────────────────────────────────────────
+
 export function normalizeDNI(dni) {
   if (!dni) return null
   return String(dni).replace(/\D/g, '').trim() || null
@@ -80,16 +84,32 @@ export function normalizePhone(phone) {
   return last10.length >= 8 ? last10 : null
 }
 
-export function normalizeDate(val) {
+// Convierte dd/mm/yyyy o dd/mm/yyyy HH:MM:SS → yyyy-mm-dd o yyyy-mm-dd HH:MM:SS
+function convertDate(val) {
   if (!val) return null
-  if (val instanceof Date) return val.toISOString().split('T')[0]
+  if (val instanceof Date) return val.toISOString().replace('T', ' ').slice(0, 19)
   const s = String(val).trim()
-  const m1 = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/)
-  if (m1) return m1[3] + '-' + m1[2].padStart(2,'0') + '-' + m1[1].padStart(2,'0')
-  const m2 = s.match(/^(\d{1,2})-(\d{1,2})-(\d{4})/)
-  if (m2) return m2[3] + '-' + m2[2].padStart(2,'0') + '-' + m2[1].padStart(2,'0')
-  if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0,10)
+  // dd/mm/yyyy HH:MM:SS
+  const m1 = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})\s+(\d{1,2}:\d{2})(:\d{2})?/)
+  if (m1) return m1[3] + '-' + m1[2].padStart(2, '0') + '-' + m1[1].padStart(2, '0') + ' ' + m1[4].padStart(5, '0') + ':00'
+  // dd/mm/yyyy solo
+  const m2 = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/)
+  if (m2) return m2[3] + '-' + m2[2].padStart(2, '0') + '-' + m2[1].padStart(2, '0')
+  // dd-mm-yyyy
+  const m3 = s.match(/^(\d{1,2})-(\d{1,2})-(\d{4})/)
+  if (m3) return m3[3] + '-' + m3[2].padStart(2, '0') + '-' + m3[1].padStart(2, '0')
+  // ya en formato ISO
+  if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s
   return null
+}
+
+export function normalizeDate(val) {
+  const result = convertDate(val)
+  return result ? result.slice(0, 10) : null  // solo fecha yyyy-mm-dd
+}
+
+export function normalizeDatetime(val) {
+  return convertDate(val)  // fecha + hora yyyy-mm-dd HH:MM:SS
 }
 
 export function extractCampaignCode(consulta) {
@@ -102,10 +122,9 @@ export function extractCampaignCode(consulta) {
   return null
 }
 
+// ── NORMALIZADORES POR TIPO DE REPORTE ───────────────────
+
 // REPORTE LEADS POR FACILITADORES
-// Cols: Fecha de consulta, ID, Apellido, Nombre, Email,
-//       TELCODAREA, TELNUMERO, Consulta, USUARIO_DERIVO,
-//       JOB_SEQ, DNI, campania, websiteName, entryMethod, Empresa
 export function normalizeFacilitadoresRow(row) {
   const tel = row['TELNUMERO'] || ''
   const telArea = row['TELCODAREA'] || ''
@@ -117,7 +136,7 @@ export function normalizeFacilitadoresRow(row) {
       : null)
   return {
     nro_tramite:    row['ID'] || row['JOB_SEQ'] || null,
-    fecha_consulta: row['Fecha de consulta'] || null,
+    fecha_consulta: normalizeDatetime(row['Fecha de consulta']),
     apellido:       row['Apellido'] || null,
     nombre:         row['Nombre'] || null,
     dni:            normalizeDNI(row['DNI']),
@@ -139,8 +158,6 @@ export function normalizeFacilitadoresRow(row) {
 }
 
 // REPORTE PV VINCULADAS
-// Cols: HISTORIAL, EMPRESA, PV/SOLICITUD, FECHA, TIPO, NOMBRE,
-//       CELULAR PERSONAL, TELEFONO PERSONAL, DNI, VENDEDOR, UNIDAD
 export function normalizePVRow(row) {
   return {
     pv_solicitud:      row['PV/SOLICITUD'] || null,
@@ -157,8 +174,6 @@ export function normalizePVRow(row) {
 }
 
 // REPORTE DERIVADO (para pestaña Ventas)
-// Cols: Nro Tramite, Fecha de Consulta, Cliente, DNI,
-//       Telefono, Celular, Vendedor, Unidad, Sub Tipo de Seguimiento
 export function normalizeDerivadoVentaRow(row) {
   const nro = row['Nro Tramite'] || null
   return {
@@ -174,3 +189,7 @@ export function normalizeDerivadoVentaRow(row) {
     fuente:           'derivado',
   }
 }
+
+// Alias para compatibilidad con código anterior
+export const normalizeK1Row = normalizePVRow
+export const normalizeDerivadoRow = normalizeDerivadoVentaRow
