@@ -10,7 +10,7 @@ export default function Ventas() {
   const [total,     setTotal]     = useState(0)
   const [page,      setPage]      = useState(0)
   const [loading,   setLoading]   = useState(true)
-  const [filters,   setFilters]   = useState({ search: '', tipo: '', marca: '' })
+  const [filters,   setFilters]   = useState({ search: '', tipo: '', marca: '', desde: '', hasta: '' })
   const [file,      setFile]      = useState(null)
   const [dragging,  setDragging]  = useState(false)
   const [uploading, setUploading] = useState(false)
@@ -26,6 +26,8 @@ export default function Ventas() {
       .range(page * PAGE, (page + 1) * PAGE - 1)
     if (filters.tipo)   q = q.ilike('tipo',  '%' + filters.tipo  + '%')
     if (filters.marca)  q = q.ilike('marca', '%' + filters.marca + '%')
+    if (filters.desde)  q = q.gte('fecha', filters.desde)
+    if (filters.hasta)  q = q.lte('fecha', filters.hasta)
     if (filters.search) q = q.or('nombre.ilike.%' + filters.search + '%,dni.eq.' + filters.search + ',pv_solicitud.ilike.%' + filters.search + '%')
     const { data, count } = await q
     setVentas(data || [])
@@ -169,20 +171,35 @@ export default function Ventas() {
         </div>
 
         <div className="flex flex-wrap gap-2 mb-4">
-          <input className="input-dark w-48" placeholder="Nombre, DNI, PV..."
+          <input className="input-dark w-44" placeholder="Nombre, DNI, PV..."
             value={filters.search} onChange={e => sf('search', e.target.value)} />
+
           <select className="input-dark w-36" value={filters.tipo} onChange={e => sf('tipo', e.target.value)}>
             <option value="">Tipo: todos</option>
             <option>0KM</option>
             <option>USADO</option>
             <option>PLAN AHORRO</option>
           </select>
+
           <select className="input-dark w-32" value={filters.marca} onChange={e => sf('marca', e.target.value)}>
             <option value="">Marca: todas</option>
             <option>KIARA</option><option>CIARA</option><option>PEARA</option><option>MOVILIS</option>
           </select>
-          <button onClick={() => { setFilters({ search:'', tipo:'', marca:'' }); setPage(0) }}
-            className="text-xs text-gray-600 hover:text-gray-300">Limpiar</button>
+
+          <div className="flex items-center gap-1.5">
+            <span className="text-xs text-gray-500">Desde</span>
+            <input type="date" className="input-dark w-36"
+              value={filters.desde} onChange={e => sf('desde', e.target.value)} />
+          </div>
+
+          <div className="flex items-center gap-1.5">
+            <span className="text-xs text-gray-500">Hasta</span>
+            <input type="date" className="input-dark w-36"
+              value={filters.hasta} onChange={e => sf('hasta', e.target.value)} />
+          </div>
+
+          <button onClick={() => { setFilters({ search:'', tipo:'', marca:'', desde:'', hasta:'' }); setPage(0) }}
+            className="text-xs text-gray-600 hover:text-gray-300 self-center">Limpiar</button>
         </div>
 
         <div className="overflow-x-auto rounded-lg border" style={{ borderColor: '#2a2a2a' }}>
