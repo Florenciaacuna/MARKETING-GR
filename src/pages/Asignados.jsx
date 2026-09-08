@@ -124,34 +124,49 @@ export default function Asignados() {
     // 4. Construir índices de búsqueda
     log('Construyendo índices...')
     const byDNI   = new Map()
-    const byPhone = new Map()
-    const byEmail = new Map()
+    const byPhone  = new Map()
+    const byPhone8 = new Map()
 
     for (const lead of allLeads) {
-      const dni   = normDNI(lead.dni)
-      const tel   = normPhone(lead.telefono)
-      const cel   = normPhone(lead.celular)
-      const email = normEmail(lead.email)
-      if (dni)   byDNI.set(dni, lead)
-      if (tel)   byPhone.set(tel, lead)
-      if (cel)   byPhone.set(cel, lead)
-      if (email) byEmail.set(email, lead)
+      const dni    = normDNI(lead.dni)
+      const phones = [normPhone(lead.telefono), normPhone(lead.celular)].filter(Boolean)
+      if (dni) byDNI.set(dni, lead)
+      for (const p of phones) {
+        byPhone.set(p, lead)
+        if (p.length >= 8) byPhone8.set(p.slice(-8), lead)
+      }
     }
+    log('Índices → DNI: ' + byDNI.size + ' | Teléfonos: ' + byPhone.size + ' | Tel-8díg: ' + byPhone8.size)
 
     // 5. Cruzar
-    log('Ejecutando cruce DNI → Teléfono → Email...')
+    log('Ejecutando cruce DNI → Tel exacto → Últimos 8 dígitos...')
     const updates = []
-    let matchDNI = 0, matchTel = 0, matchEmail = 0, sinMatch = 0
+    let matchDNI = 0, matchTel = 0, matchTel8 = 0, sinMatch = 0
 
     for (const v of allVentas) {
-      const vDNI   = normDNI(v.dni)
-      const vTel   = normPhone(v.telefono_personal)
-      const vCel   = normPhone(v.celular_personal)
+      const vDNI    = normDNI(v.dni)
+      const vPhones = [normPhone(v.telefono_personal), normPhone(v.celular_personal)].filter(Boolean)
       let lead = null, metodo = null
 
-      if (vDNI && byDNI.has(vDNI))           { lead = byDNI.get(vDNI);     metodo = 'dni';      matchDNI++ }
-      if (!lead && vTel && byPhone.has(vTel)) { lead = byPhone.get(vTel);   metodo = 'telefono'; matchTel++ }
-      if (!lead && vCel && byPhone.has(vCel)) { lead = byPhone.get(vCel);   metodo = 'celular';  matchTel++ }
+      // 1. DNI exacto
+      if (vDNI && byDNI.has(vDNI)) {
+        lead = byDNI.get(vDNI); metodo = 'dni'; matchDNI++
+      }
+      // 2. Teléfono 10 dígitos exactos
+      if (!lead) {
+        for (const p of vPhones) {
+          if (byPhone.has(p)) { lead = byPhone.get(p); metodo = 'telefono'; matchTel++; break }
+        }
+      }
+      // 3. Últimos 8 dígitos — cubre variaciones de código de área
+      if (!lead) {
+        for (const p of vPhones) {
+          const p8 = p.slice(-8)
+          if (p8.length === 8 && byPhone8.has(p8)) {
+            lead = byPhone8.get(p8); metodo = 'tel_parcial'; matchTel8++; break
+          }
+        }
+      }
       if (!lead) sinMatch++
 
       updates.push({
@@ -162,7 +177,7 @@ export default function Asignados() {
       })
     }
 
-    log(`Matches → DNI: ${matchDNI} | Teléfono: ${matchTel} | Email: ${matchEmail} | Sin match: ${sinMatch}`)
+    log(`Matches → DNI: ${matchDNI} | Tel exacto: ${matchTel} | Tel 8 dígitos: ${matchTel8} | Sin match: ${sinMatch}`)
 
     // 6. Guardar en lotes de 100
     log('Guardando resultados...')
