@@ -241,6 +241,7 @@ export function normalizePVRow(row) {
     celular_personal:  normalizePhone(row['CELULAR PERSONAL'] || row['CELULAR LABORAL']),
     vendedor:          row['VENDEDOR'] || null,
     marca:             row['EMPRESA'] || null,
+    proceso:           row['Proceso'] ? String(row['Proceso']).trim() : null,
     fuente:           'pv_vinculadas',
   }
 }
