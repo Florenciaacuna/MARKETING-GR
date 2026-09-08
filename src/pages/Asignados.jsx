@@ -35,34 +35,49 @@ export default function Asignados() {
   const [running,  setRunning]  = useState(false)
   const [runLog,   setRunLog]   = useState([])
   const [page,     setPage]     = useState(0)
-  const [filters,  setFilters]  = useState({ search: '', tipo: '', campana_id: '', mes: '', tab_override: '' })
-  const [campanas, setCampanas] = useState([])
-  const [meses,    setMeses]    = useState([])
+  const [filters,  setFilters]  = useState({ search: '', tipo: '', campana_codigo: '', mes: '' })
+  const [meses,         setMeses]        = useState([])
+  const [codigosCampana,setCodigosCampana]= useState([])
 
   useEffect(() => {
-    supabase.from('mkt_campanas').select('id,nombre').order('nombre')
-      .then(({ data }) => setCampanas(data || []))
-    // Traer meses disponibles de ventas
+    // Meses disponibles en ventas
     supabase.from('mkt_ventas').select('fecha').not('fecha','is',null)
       .then(({ data }) => {
         if (!data) return
         const unicos = [...new Set(data.map(r => r.fecha?.slice(0,7)).filter(Boolean))].sort().reverse()
         setMeses(unicos)
       })
+    // Códigos de campaña distintos de los leads
+    supabase.from('mkt_leads').select('codigo_campana').not('codigo_campana','is',null)
+      .then(({ data }) => {
+        if (!data) return
+        const unicos = [...new Set(data.map(r => r.codigo_campana).filter(Boolean))].sort()
+        setCodigosCampana(unicos)
+      })
   }, [])
 
   const loadStats = useCallback(async () => {
-    const [{ count: digital }, { count: otros }, { count: totalV }, { count: totalL }] = await Promise.all([
-      supabase.from('mkt_ventas').select('*', { count: 'exact', head: true }).not('lead_id', 'is', null),
-      supabase.from('mkt_ventas').select('*', { count: 'exact', head: true }).is('lead_id', null),
-      supabase.from('mkt_ventas').select('*', { count: 'exact', head: true }),
+    const applyMes = (q) => filters.mes
+      ? q.gte('fecha', filters.mes + '-01').lte('fecha', filters.mes + '-31')
+      : q
+    const [r1, r2, r3, r4] = await Promise.all([
+      applyMes(supabase.from('mkt_ventas').select('*', { count: 'exact', head: true })).not('lead_id', 'is', null),
+      applyMes(supabase.from('mkt_ventas').select('*', { count: 'exact', head: true })).is('lead_id', null),
+      applyMes(supabase.from('mkt_ventas').select('*', { count: 'exact', head: true })),
       supabase.from('mkt_leads').select('*',  { count: 'exact', head: true }),
     ])
-    setStats({ digital: digital||0, otros: otros||0, totalV: totalV||0, totalL: totalL||0 })
-  }, [])
+    setStats({ digital: r1.count||0, otros: r2.count||0, totalV: r3.count||0, totalL: r4.count||0 })
+  }, [filters.mes])
 
   const loadData = useCallback(async () => {
     setLoading(true)
+    // Si hay filtro de campaña, buscar los lead_ids que coinciden
+    let leadIdsFiltro = null
+    if (filters.campana_codigo) {
+      const { data: matchLeads } = await supabase.from('mkt_leads')
+        .select('id').eq('codigo_campana', filters.campana_codigo)
+      leadIdsFiltro = (matchLeads || []).map(l => l.id)
+    }
     let q = supabase.from('mkt_ventas')
       .select(`id,pv_solicitud,fecha,tipo,nombre,dni,telefono_personal,celular_personal,
                vendedor,marca,fuente,metodo_match,lead_id,campana_id,
@@ -72,10 +87,13 @@ export default function Asignados() {
       .range(page * PAGE, (page + 1) * PAGE - 1)
     if (tab === 'digital') q = q.not('lead_id', 'is', null)
     else q = q.is('lead_id', null)
-    if (filters.tipo)       q = q.ilike('tipo',  '%' + filters.tipo + '%')
-    if (filters.campana_id) q = q.eq('campana_id', filters.campana_id)
-    if (filters.mes)        q = q.gte('fecha', filters.mes + '-01').lte('fecha', filters.mes + '-31')
-    if (filters.search)     q = q.or('nombre.ilike.%' + filters.search + '%,dni.eq.' + filters.search + ',pv_solicitud.ilike.%' + filters.search + '%')
+    if (filters.tipo)        q = q.ilike('tipo', '%' + filters.tipo + '%')
+    if (filters.mes)         q = q.gte('fecha', filters.mes + '-01').lte('fecha', filters.mes + '-31')
+    if (filters.search)      q = q.or('nombre.ilike.%' + filters.search + '%,dni.eq.' + filters.search + ',pv_solicitud.ilike.%' + filters.search + '%')
+    if (leadIdsFiltro !== null) {
+      if (leadIdsFiltro.length > 0) q = q.in('lead_id', leadIdsFiltro)
+      else q = q.eq('id', '00000000-0000-0000-0000-000000000000') // sin resultados
+    }
     const { data: rows } = await q
     setData(rows || [])
     setLoading(false)
@@ -302,7 +320,7 @@ export default function Asignados() {
         <div className="flex flex-wrap gap-2 mb-4">
 
           {/* Mes */}
-          <select className="input-dark w-36" value={filters.mes} onChange={e => sf('mes', e.target.value)}>
+          <select className="input-dark w-40" value={filters.mes} onChange={e => sf('mes', e.target.value)}>
             <option value="">Mes: todos</option>
             {meses.map(m => (
               <option key={m} value={m}>
@@ -315,11 +333,11 @@ export default function Asignados() {
           <input className="input-dark w-44" placeholder="Cliente, DNI, PV..."
             value={filters.search} onChange={e => sf('search', e.target.value)} />
 
-          {/* Campaña */}
-          <select className="input-dark w-48" value={filters.campana_id} onChange={e => sf('campana_id', e.target.value)}>
+          {/* Campaña — por código del lead */}
+          <select className="input-dark w-44" value={filters.campana_codigo} onChange={e => sf('campana_codigo', e.target.value)}>
             <option value="">Campaña: todas</option>
-            {campanas.map(c => (
-              <option key={c.id} value={c.id}>{c.nombre}</option>
+            {codigosCampana.map(c => (
+              <option key={c} value={c}>[{c}]</option>
             ))}
           </select>
 
@@ -331,7 +349,7 @@ export default function Asignados() {
             <option>PLAN AHORRO</option>
           </select>
 
-          <button onClick={() => { setFilters({ search:'', tipo:'', campana_id:'', mes:'', tab_override:'' }); setPage(0) }}
+          <button onClick={() => { setFilters({ search:'', tipo:'', campana_codigo:'', mes:'' }); setPage(0) }}
             className="text-xs text-gray-600 hover:text-gray-300 self-center">
             Limpiar
           </button>
