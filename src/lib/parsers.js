@@ -223,12 +223,16 @@ export function normalizeFacilitadoresRow(row) {
 
 // REPORTE PV VINCULADAS
 export function normalizePVRow(row) {
-  // Ignorar filas con nombre "NO USAR" o similares
+  // Ignorar filas con nombre "NO USAR"
   const nombre = String(row['NOMBRE'] || '').toUpperCase().trim()
   if (nombre.includes('NO USAR') || nombre === 'NO_USAR') return null
 
+  // Ignorar PVs que terminan en /45 (plan ahorro externo, no relevante)
+  const pv = row['PV/SOLICITUD'] || null
+  if (pv && String(pv).trim().endsWith('/45')) return null
+
   return {
-    pv_solicitud:      row['PV/SOLICITUD'] || null,
+    pv_solicitud:      pv,
     fecha:             normalizeDate(row['FECHA']),
     tipo:              row['TIPO'] || null,
     nombre:            row['NOMBRE'] || null,
@@ -255,6 +259,36 @@ export function normalizeDerivadoVentaRow(row) {
     vendedor:          row['Vendedor'] || null,
     marca:             row['Unidad'] || null,
     fuente:           'derivado',
+  }
+}
+
+// REPORTE DERIVADO (para pestaña Leads)
+// Cols: Nro Tramite, Fecha de Consulta, Cliente, DNI,
+//       Telefono, Celular, Email, Vendedor, Origen, Sub Origen, Campaña
+export function normalizeDerivadoLeadRow(row) {
+  const codigoCampana =
+    extractCampaignCode(row['Campaña']) ||
+    extractCampaignCode(row['Comentario Derivado'])
+  return {
+    nro_tramite:    row['Nro Tramite'] ? String(row['Nro Tramite']) : null,
+    fecha_consulta: row['Fecha de Consulta'] || row['Fecha de consulta'] || null,
+    apellido:       null,
+    nombre:         row['Cliente'] || null,
+    dni:            normalizeDNI(row['DNI']),
+    telefono:       normalizePhone(row['Telefono']),
+    celular:        normalizePhone(row['Celular']),
+    email:          row['Email'] || null,
+    origen:         row['Origen'] || null,
+    sub_origen:     row['Sub Origen'] || null,
+    canal:          row['Metodo De Ingreso'] || row['Sistema'] || null,
+    codigo_campana: codigoCampana,
+    consulta:       row['Comentario Derivado'] || null,
+    website_name:   null,
+    entry_method:   row['Metodo De Ingreso'] || null,
+    vendedor:       row['Vendedor'] || null,
+    marca:          null,
+    estado:         row['Estado Tramite'] || null,
+    fuente:        'derivado',
   }
 }
 
