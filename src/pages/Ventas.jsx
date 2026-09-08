@@ -41,9 +41,10 @@ export default function Ventas() {
     const { data: rows } = await parseFile(file)
     const cols = Object.keys(rows[0] || {})
 
-    const rawValidos = rows.map(normalizePVRow).filter(v => v.pv_solicitud)
+    const rawValidos = rows.map(normalizePVRow).filter(v => v && v.pv_solicitud)
+    // Deduplicar por PV/SOLICITUD únicamente — sin importar la fuente
     const visto = new Map()
-    rawValidos.forEach(v => visto.set(v.pv_solicitud + '|' + v.fuente, v))
+    rawValidos.forEach(v => visto.set(v.pv_solicitud, v))
     const validos = Array.from(visto.values())
 
     let guardados = 0; let errorMsg = null
