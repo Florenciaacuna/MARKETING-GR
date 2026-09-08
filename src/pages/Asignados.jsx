@@ -80,7 +80,7 @@ export default function Asignados() {
     }
     let q = supabase.from('mkt_ventas')
       .select(`id,pv_solicitud,fecha,tipo,nombre,dni,telefono_personal,celular_personal,
-               vendedor,marca,fuente,metodo_match,lead_id,campana_id,
+               vendedor,marca,fuente,metodo_match,lead_id,campana_id,proceso,
                mkt_leads!mkt_ventas_lead_id_fkey(nro_tramite,canal,codigo_campana,origen,fecha_consulta)`,
         { count: 'exact' })
       .order('fecha', { ascending: false })
@@ -128,7 +128,7 @@ export default function Asignados() {
     from = 0
     while (true) {
       const { data: batch } = await supabase.from('mkt_ventas')
-        .select('id,dni,telefono_personal,celular_personal')
+        .select('id,dni,telefono_personal,celular_personal,proceso')
         .range(from, from + 999)
       if (!batch || batch.length === 0) break
       allVentas = allVentas.concat(batch)
@@ -162,20 +162,30 @@ export default function Asignados() {
         if (p.length >= 8) byPhone8.set(p.slice(-8), lead)
       }
     }
-    log('Índices → DNI: ' + byDNI.size + ' | Teléfonos: ' + byPhone.size + ' | Tel-8díg: ' + byPhone8.size)
+    // Índice por proceso (Nro Tramite directo del Celer)
+    const byProceso = new Map()
+    for (const lead of allLeads) {
+      if (lead.nro_tramite) byProceso.set(String(lead.nro_tramite), lead)
+    }
+    log('Índices → DNI: ' + byDNI.size + ' | Teléfonos: ' + byPhone.size + ' | Tel-8díg: ' + byPhone8.size + ' | Proceso: ' + byProceso.size)
 
     // 5. Cruzar
-    log('Ejecutando cruce DNI → Tel exacto → Últimos 8 dígitos...')
+    log('Ejecutando cruce Proceso → DNI → Tel exacto → Últimos 8 dígitos...')
     const updates = []
-    let matchDNI = 0, matchTel = 0, matchTel8 = 0, sinMatch = 0
+    let matchProceso = 0, matchDNI = 0, matchTel = 0, matchTel8 = 0, sinMatch = 0
 
     for (const v of allVentas) {
-      const vDNI    = normDNI(v.dni)
-      const vPhones = [normPhone(v.telefono_personal), normPhone(v.celular_personal)].filter(Boolean)
+      const vProceso = v.proceso ? String(v.proceso).trim() : null
+      const vDNI     = normDNI(v.dni)
+      const vPhones  = [normPhone(v.telefono_personal), normPhone(v.celular_personal)].filter(Boolean)
       let lead = null, metodo = null
 
+      // 0. Proceso — vínculo directo Celer (más confiable)
+      if (vProceso && byProceso.has(vProceso)) {
+        lead = byProceso.get(vProceso); metodo = 'proceso'; matchProceso++
+      }
       // 1. DNI exacto
-      if (vDNI && byDNI.has(vDNI)) {
+      if (!lead && vDNI && byDNI.has(vDNI)) {
         lead = byDNI.get(vDNI); metodo = 'dni'; matchDNI++
       }
       // 2. Teléfono 10 dígitos exactos
@@ -203,7 +213,7 @@ export default function Asignados() {
       })
     }
 
-    log(`Matches → DNI: ${matchDNI} | Tel exacto: ${matchTel} | Tel 8 dígitos: ${matchTel8} | Sin match: ${sinMatch}`)
+    log(`Matches → Proceso: ${matchProceso} | DNI: ${matchDNI} | Tel exacto: ${matchTel} | Tel 8 díg: ${matchTel8} | Sin match: ${sinMatch}`)
 
     // 6. Guardar en lotes de 100
     log('Guardando resultados...')
