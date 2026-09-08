@@ -28,14 +28,20 @@ function normEmail(e) {
 }
 
 export default function Asignados() {
-  const [tab,     setTab]     = useState('digital')
-  const [data,    setData]    = useState([])
-  const [stats,   setStats]   = useState(null)
-  const [loading, setLoading] = useState(true)
-  const [running, setRunning] = useState(false)
-  const [runLog,  setRunLog]  = useState([])
-  const [page,    setPage]    = useState(0)
-  const [filters, setFilters] = useState({ search: '', marca: '', tipo: '' })
+  const [tab,      setTab]      = useState('digital')
+  const [data,     setData]     = useState([])
+  const [stats,    setStats]    = useState(null)
+  const [loading,  setLoading]  = useState(true)
+  const [running,  setRunning]  = useState(false)
+  const [runLog,   setRunLog]   = useState([])
+  const [page,     setPage]     = useState(0)
+  const [filters,  setFilters]  = useState({ search: '', marca: '', tipo: '', campana_id: '', canal: '' })
+  const [campanas, setCampanas] = useState([])
+
+  useEffect(() => {
+    supabase.from('mkt_campanas').select('id,nombre').order('nombre')
+      .then(({ data }) => setCampanas(data || []))
+  }, [])
 
   const loadStats = useCallback(async () => {
     const [{ count: digital }, { count: otros }, { count: totalV }, { count: totalL }] = await Promise.all([
@@ -51,16 +57,17 @@ export default function Asignados() {
     setLoading(true)
     let q = supabase.from('mkt_ventas')
       .select(`id,pv_solicitud,fecha,tipo,nombre,dni,telefono_personal,celular_personal,
-               vendedor,marca,fuente,metodo_match,lead_id,
+               vendedor,marca,fuente,metodo_match,lead_id,campana_id,
                mkt_leads!mkt_ventas_lead_id_fkey(nro_tramite,canal,codigo_campana,origen,fecha_consulta)`,
         { count: 'exact' })
       .order('fecha', { ascending: false })
       .range(page * PAGE, (page + 1) * PAGE - 1)
     if (tab === 'digital') q = q.not('lead_id', 'is', null)
     else q = q.is('lead_id', null)
-    if (filters.marca)  q = q.ilike('marca',  '%' + filters.marca  + '%')
-    if (filters.tipo)   q = q.ilike('tipo',   '%' + filters.tipo   + '%')
-    if (filters.search) q = q.or('nombre.ilike.%' + filters.search + '%,dni.eq.' + filters.search + ',pv_solicitud.ilike.%' + filters.search + '%')
+    if (filters.marca)      q = q.ilike('marca', '%' + filters.marca + '%')
+    if (filters.tipo)       q = q.ilike('tipo',  '%' + filters.tipo  + '%')
+    if (filters.campana_id) q = q.eq('campana_id', filters.campana_id)
+    if (filters.search)     q = q.or('nombre.ilike.%' + filters.search + '%,dni.eq.' + filters.search + ',pv_solicitud.ilike.%' + filters.search + '%')
     const { data: rows } = await q
     setData(rows || [])
     setLoading(false)
@@ -270,14 +277,38 @@ export default function Asignados() {
 
         {/* Filtros */}
         <div className="flex flex-wrap gap-2 mb-4">
-          <input className="input-dark w-48" placeholder="Nombre, DNI, PV..."
+          <input className="input-dark w-44" placeholder="Nombre, DNI, PV..."
             value={filters.search} onChange={e => sf('search', e.target.value)} />
-          <input className="input-dark w-32" placeholder="Marca..."
-            value={filters.marca} onChange={e => sf('marca', e.target.value)} />
-          <input className="input-dark w-32" placeholder="Tipo..."
-            value={filters.tipo} onChange={e => sf('tipo', e.target.value)} />
-          <button onClick={() => { setFilters({ search:'', marca:'', tipo:'' }); setPage(0) }}
-            className="text-xs text-gray-600 hover:text-gray-300">Limpiar</button>
+
+          <select className="input-dark w-36" value={filters.tipo} onChange={e => sf('tipo', e.target.value)}>
+            <option value="">Tipo: todos</option>
+            <option>0KM</option>
+            <option>USADO</option>
+            <option>PLAN AHORRO</option>
+          </select>
+
+          <select className="input-dark w-32" value={filters.marca} onChange={e => sf('marca', e.target.value)}>
+            <option value="">Marca: todas</option>
+            <option>KIARA</option>
+            <option>CIARA</option>
+            <option>PEARA</option>
+            <option>MOVILIS</option>
+          </select>
+
+          <select className="input-dark w-48" value={filters.campana_id} onChange={e => sf('campana_id', e.target.value)}>
+            <option value="">Campaña: todas</option>
+            {campanas.map(c => (
+              <option key={c.id} value={c.id}>{c.nombre}</option>
+            ))}
+          </select>
+
+          <input className="input-dark w-36" placeholder="Canal lead..."
+            value={filters.canal} onChange={e => sf('canal', e.target.value)} />
+
+          <button onClick={() => { setFilters({ search:'', marca:'', tipo:'', campana_id:'', canal:'' }); setPage(0) }}
+            className="text-xs text-gray-600 hover:text-gray-300 self-center">
+            Limpiar
+          </button>
         </div>
 
         {/* Tabla */}
@@ -307,7 +338,10 @@ export default function Asignados() {
                     : 'Todas las ventas tienen lead asignado.'}
                 </td></tr>
               )}
-              {data.map(v => {
+              {(filters.canal
+                ? data.filter(v => v.mkt_leads?.canal?.toLowerCase().includes(filters.canal.toLowerCase()))
+                : data
+              ).map(v => {
                 const lead = v.mkt_leads
                 return (
                   <tr key={v.id}>
