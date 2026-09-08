@@ -95,7 +95,7 @@ export default function Asignados() {
     from = 0
     while (true) {
       const { data: batch } = await supabase.from('mkt_ventas')
-        .select('id,dni,telefono_personal,celular_personal,email')
+        .select('id,dni,telefono_personal,celular_personal')
         .range(from, from + 999)
       if (!batch || batch.length === 0) break
       allVentas = allVentas.concat(batch)
@@ -140,14 +140,11 @@ export default function Asignados() {
       const vDNI   = normDNI(v.dni)
       const vTel   = normPhone(v.telefono_personal)
       const vCel   = normPhone(v.celular_personal)
-      const vEmail = normEmail(v.email)
-
       let lead = null, metodo = null
 
-      if (vDNI && byDNI.has(vDNI))     { lead = byDNI.get(vDNI);     metodo = 'dni';     matchDNI++ }
-      if (!lead && vTel && byPhone.has(vTel)) { lead = byPhone.get(vTel); metodo = 'telefono'; matchTel++ }
-      if (!lead && vCel && byPhone.has(vCel)) { lead = byPhone.get(vCel); metodo = 'celular';  matchTel++ }
-      if (!lead && vEmail && byEmail.has(vEmail)) { lead = byEmail.get(vEmail); metodo = 'email'; matchEmail++ }
+      if (vDNI && byDNI.has(vDNI))           { lead = byDNI.get(vDNI);     metodo = 'dni';      matchDNI++ }
+      if (!lead && vTel && byPhone.has(vTel)) { lead = byPhone.get(vTel);   metodo = 'telefono'; matchTel++ }
+      if (!lead && vCel && byPhone.has(vCel)) { lead = byPhone.get(vCel);   metodo = 'celular';  matchTel++ }
       if (!lead) sinMatch++
 
       updates.push({
