@@ -223,6 +223,10 @@ export function normalizeFacilitadoresRow(row) {
 
 // REPORTE PV VINCULADAS
 export function normalizePVRow(row) {
+  // Ignorar filas con nombre "NO USAR" o similares
+  const nombre = String(row['NOMBRE'] || '').toUpperCase().trim()
+  if (nombre.includes('NO USAR') || nombre === 'NO_USAR') return null
+
   return {
     pv_solicitud:      row['PV/SOLICITUD'] || null,
     fecha:             normalizeDate(row['FECHA']),
