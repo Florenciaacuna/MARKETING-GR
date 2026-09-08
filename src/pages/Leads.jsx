@@ -1,24 +1,54 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { supabase } from '../lib/supabase'
-import { parseFile, normalizeFacilitadoresRow } from '../lib/parsers'
+import { parseFile, normalizeFacilitadoresRow, normalizeDerivadoLeadRow } from '../lib/parsers'
 
 const BRAND = '#B5E000'
 const PAGE  = 50
 
+function DropZone({ label, sublabel, badge, note, file, onFile, onClear }) {
+  const ref = useRef()
+  const [drag, setDrag] = useState(false)
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-2">
+        <span className="text-xs font-bold text-white">{label}</span>
+        <span className={'badge ' + badge}>{note}</span>
+      </div>
+      <div
+        className={'dropzone ' + (drag ? 'active' : '') + (file ? ' filled' : '')}
+        onDragOver={e => { e.preventDefault(); setDrag(true) }}
+        onDragLeave={() => setDrag(false)}
+        onDrop={e => { e.preventDefault(); setDrag(false); const f = e.dataTransfer.files[0]; if(f) onFile(f) }}
+        onClick={() => ref.current.click()}
+      >
+        <input ref={ref} type="file" accept=".xls,.xlsx,.csv" className="hidden"
+          onChange={e => { if(e.target.files[0]) onFile(e.target.files[0]) }} />
+        <div className="text-xl mb-1">{file ? '✓' : '↑'}</div>
+        <div className="font-semibold text-sm text-white">{file ? file.name : sublabel}</div>
+        <div className="text-xs text-gray-500 mt-0.5">{file ? 'Listo para procesar' : 'Clic o arrastrar .xls del Celer'}</div>
+      </div>
+      {file && (
+        <button onClick={onClear} className="text-xs text-gray-600 hover:text-red-400 mt-1 transition-colors">
+          ✕ Quitar archivo
+        </button>
+      )}
+    </div>
+  )
+}
+
 export default function Leads() {
-  const [leads,       setLeads]       = useState([])
-  const [total,       setTotal]       = useState(0)
-  const [page,        setPage]        = useState(0)
-  const [loading,     setLoading]     = useState(true)
-  const [filters,     setFilters]     = useState({ search: '', canal: '', campana: '' })
-  const [file,        setFile]        = useState(null)
-  const [dragging,    setDragging]    = useState(false)
-  const [uploading,   setUploading]   = useState(false)
-  const [result,      setResult]      = useState(null)
-  const [showFmt,     setShowFmt]     = useState(false)
-  const [enriching,   setEnriching]   = useState(false)
-  const [enrichResult,setEnrichResult]= useState(null)
-  const fileRef = useRef()
+  const [leads,        setLeads]        = useState([])
+  const [total,        setTotal]        = useState(0)
+  const [page,         setPage]         = useState(0)
+  const [loading,      setLoading]      = useState(true)
+  const [filters,      setFilters]      = useState({ search: '', canal: '', fuente: '', campana: '' })
+  const [fileFac,      setFileFac]      = useState(null)
+  const [fileDer,      setFileDer]      = useState(null)
+  const [uploading,    setUploading]    = useState(false)
+  const [result,       setResult]       = useState(null)
+  const [showFmt,      setShowFmt]      = useState(false)
+  const [enriching,    setEnriching]    = useState(false)
+  const [enrichResult, setEnrichResult] = useState(null)
 
   const loadLeads = useCallback(async () => {
     setLoading(true)
@@ -26,6 +56,7 @@ export default function Leads() {
       .select('id,nro_tramite,fecha_consulta,apellido,nombre,dni,telefono,email,origen,canal,codigo_campana,vendedor,fuente,campana_id,estado', { count: 'exact' })
       .order('fecha_consulta', { ascending: false })
       .range(page * PAGE, (page + 1) * PAGE - 1)
+    if (filters.fuente)  q = q.eq('fuente', filters.fuente)
     if (filters.canal)   q = q.ilike('canal', '%' + filters.canal + '%')
     if (filters.campana) q = q.not('campana_id', 'is', null)
     if (filters.search)  q = q.or('apellido.ilike.%' + filters.search + '%,nombre.ilike.%' + filters.search + '%,dni.eq.' + filters.search + ',telefono.eq.' + filters.search)
@@ -37,70 +68,93 @@ export default function Leads() {
 
   useEffect(() => { loadLeads() }, [loadLeads])
 
+  // ── PROCESAR ARCHIVOS ─────────────────────────────────────
   async function procesar() {
-    if (!file) return
+    if (!fileFac && !fileDer) return
     setUploading(true); setResult(null)
 
-    const { data: rows } = await parseFile(file)
-    const cols = Object.keys(rows[0] || {})
+    let totalProcesados = 0
+    let guardadosFac = 0, guardadosDer = 0
+    let errorMsg = null
+    let diagFac = null, diagDer = null
 
-    // Normalizar todas las filas
-    const mapeados = rows.map(normalizeFacilitadoresRow)
-
-    // El ID puede venir como número o string — convertir a string siempre
-    const validos = mapeados
-      .map(l => ({ ...l, nro_tramite: l.nro_tramite ? String(l.nro_tramite) : null }))
-      .filter(l => l.nro_tramite)
-
-    // Diagnóstico
-    const conDNI   = mapeados.filter(l => l.dni).length
-    const conTel   = mapeados.filter(l => l.telefono).length
-    const conEmail = mapeados.filter(l => l.email).length
-    const primerID = rows[0]
-      ? String(rows[0]['ID'] || rows[0]['JOB_SEQ'] || rows[0]['id'] || rows[0]['Id'] || '(no encontrado)')
-      : '—'
-
-    let guardados = 0; let errorMsg = null
-    if (validos.length > 0) {
-      // Deduplicar por nro_tramite+fuente
+    // ── Facilitadores
+    if (fileFac) {
+      const { data: rows } = await parseFile(fileFac)
+      totalProcesados += rows.length
+      const cols = Object.keys(rows[0] || {})
+      const mapeados = rows.map(normalizeFacilitadoresRow)
+      const validos = mapeados
+        .map(l => ({ ...l, nro_tramite: l.nro_tramite ? String(l.nro_tramite) : null }))
+        .filter(l => l.nro_tramite)
+      // Deduplicar
       const visto = new Map()
       validos.forEach(l => visto.set(l.nro_tramite + '|' + l.fuente, l))
-      const deduplicados = Array.from(visto.values())
+      const dedup = Array.from(visto.values())
 
-      for (let i = 0; i < deduplicados.length; i += 500) {
-        const batch = deduplicados.slice(i, i + 500)
+      diagFac = {
+        leidos: rows.length, conNro: dedup.length,
+        conDNI: mapeados.filter(l=>l.dni).length,
+        conTel: mapeados.filter(l=>l.telefono).length,
+        primerID: rows[0] ? String(rows[0]['ID'] || rows[0]['JOB_SEQ'] || '(vacío)') : '—',
+        cols: cols.slice(0, 8)
+      }
+
+      for (let i = 0; i < dedup.length; i += 500) {
+        const batch = dedup.slice(i, i + 500)
         const { error } = await supabase.from('mkt_leads')
           .upsert(batch, { onConflict: 'nro_tramite,fuente', ignoreDuplicates: false })
-        if (error) { errorMsg = error.message; break }
-        else guardados += batch.length
+        if (error) { errorMsg = 'Facilitadores: ' + error.message; break }
+        else guardadosFac += batch.length
       }
     }
 
-    setResult({ procesados: rows.length, guardados, error: errorMsg, cols, conNro: validos.length, conDNI, conTel, conEmail, primerID })
-    setUploading(false); setFile(null)
-    if (guardados > 0) loadLeads()
+    // ── Derivado
+    if (fileDer) {
+      const { data: rows } = await parseFile(fileDer)
+      totalProcesados += rows.length
+      const mapeados = rows.map(normalizeDerivadoLeadRow)
+      const validos = mapeados.filter(l => l.nro_tramite)
+      const visto = new Map()
+      validos.forEach(l => visto.set(l.nro_tramite + '|' + l.fuente, l))
+      const dedup = Array.from(visto.values())
+
+      diagDer = {
+        leidos: rows.length, conNro: dedup.length,
+        conDNI: mapeados.filter(l=>l.dni).length,
+        conTel: mapeados.filter(l=>l.telefono || l.celular).length,
+      }
+
+      for (let i = 0; i < dedup.length; i += 500) {
+        const batch = dedup.slice(i, i + 500)
+        const { error } = await supabase.from('mkt_leads')
+          .upsert(batch, { onConflict: 'nro_tramite,fuente', ignoreDuplicates: false })
+        if (error) { errorMsg = (errorMsg || '') + ' | Derivado: ' + error.message; break }
+        else guardadosDer += batch.length
+      }
+    }
+
+    setResult({ guardadosFac, guardadosDer, totalProcesados, error: errorMsg, diagFac, diagDer })
+    setUploading(false); setFileFac(null); setFileDer(null)
+    if (guardadosFac + guardadosDer > 0) loadLeads()
   }
 
   // ── ENRIQUECIMIENTO CON IA ────────────────────────────────
   async function enriquecerConIA() {
     setEnriching(true); setEnrichResult(null)
-
     const { data: leadsVacios } = await supabase.from('mkt_leads')
       .select('id,consulta,dni,telefono,email')
       .not('consulta', 'is', null)
       .limit(200)
-
     if (!leadsVacios?.length) {
-      setEnrichResult('No hay leads con texto en CONSULTA para procesar.')
+      setEnrichResult('No hay leads con texto en CONSULTA.')
       setEnriching(false); return
     }
-
     const aEnriquecer = leadsVacios.filter(l => !l.dni || !l.telefono || !l.email)
     if (!aEnriquecer.length) {
       setEnrichResult('Todos los leads ya tienen DNI, teléfono y email.')
       setEnriching(false); return
     }
-
     let actualizados = 0
     for (const lead of aEnriquecer) {
       try {
@@ -108,20 +162,15 @@ export default function Leads() {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            model: 'claude-sonnet-4-6',
-            max_tokens: 200,
-            messages: [{
-              role: 'user',
-              content: `Extraé del texto: DNI (7-8 dígitos), teléfono (con +54 si está), email.
-Respondé SOLO JSON sin texto extra: {"dni":"solo dígitos o null","telefono":"número completo o null","email":"email o null"}
-
-Texto: ${String(lead.consulta).slice(0, 600)}`
+            model: 'claude-sonnet-4-6', max_tokens: 200,
+            messages: [{ role: 'user', content:
+              `Extraé del texto: DNI (7-8 dígitos), teléfono (con +54 si está), email.\nRespondé SOLO JSON sin texto extra: {"dni":"solo dígitos o null","telefono":"número completo o null","email":"email o null"}\n\nTexto: ${String(lead.consulta).slice(0,600)}`
             }]
           })
         })
         const data = await resp.json()
         const raw = data.content?.[0]?.text || '{}'
-        const extracted = JSON.parse(raw.replace(/```json|```/g, '').trim())
+        const extracted = JSON.parse(raw.replace(/```json|```/g,'').trim())
         const updates = {}
         if (!lead.dni    && extracted.dni    && extracted.dni    !== 'null') updates.dni    = extracted.dni.replace(/\D/g,'')
         if (!lead.telefono && extracted.telefono && extracted.telefono !== 'null') updates.telefono = extracted.telefono
@@ -130,12 +179,10 @@ Texto: ${String(lead.consulta).slice(0, 600)}`
           await supabase.from('mkt_leads').update(updates).eq('id', lead.id)
           actualizados++
         }
-      } catch(e) { console.error('Error IA lead:', lead.id, e) }
+      } catch(e) { console.error('Error IA:', lead.id, e) }
     }
-
-    setEnrichResult(`Procesados: ${aEnriquecer.length} · Actualizados con datos nuevos: ${actualizados}`)
-    setEnriching(false)
-    loadLeads()
+    setEnrichResult(`Procesados: ${aEnriquecer.length} · Actualizados: ${actualizados}`)
+    setEnriching(false); loadLeads()
   }
 
   const sf = (k, v) => { setFilters(p => ({ ...p, [k]: v })); setPage(0) }
@@ -147,114 +194,98 @@ Texto: ${String(lead.consulta).slice(0, 600)}`
       <div className="card">
         <div className="flex items-center justify-between mb-4">
           <div>
-            <h2 className="font-bold text-white text-base">Reporte Leads por Facilitadores</h2>
-            <p className="text-xs text-gray-500 mt-0.5">Descargado directamente del CRM Celer, sin modificar</p>
+            <h2 className="font-bold text-white text-base">Cargar leads</h2>
+            <p className="text-xs text-gray-500 mt-0.5">Dos reportes del Celer — no duplican datos entre sí</p>
           </div>
           <button onClick={() => setShowFmt(p => !p)} className="btn-ghost text-xs">
-            {showFmt ? 'Ocultar' : 'Ver columnas'}
+            {showFmt ? 'Ocultar columnas' : 'Ver columnas'}
           </button>
         </div>
 
         {showFmt && (
-          <div className="mb-4 rounded-lg border overflow-hidden" style={{ borderColor: '#2a2a2a' }}>
-            <div className="px-3 py-2 text-xs font-bold text-gray-500 uppercase" style={{ background: '#0a0a0a' }}>
-              Columnas del archivo Celer
+          <div className="grid grid-cols-2 gap-3 mb-4">
+            <div className="rounded-lg border overflow-hidden" style={{ borderColor:'#2a2a2a' }}>
+              <div className="px-3 py-2 text-xs font-bold text-gray-400 uppercase" style={{ background:'#0a0a0a' }}>Facilitadores</div>
+              <div className="p-2 flex flex-wrap gap-1">
+                {['Fecha de consulta','ID','JOB_SEQ','Apellido','Nombre','DNI','TELNUMERO','TELCODAREA','Email','Consulta','USUARIO_DERIVO','campania','websiteName','entryMethod','Empresa'].map(c => (
+                  <span key={c} className={'badge ' + (['ID','JOB_SEQ','DNI','TELNUMERO'].includes(c) ? 'badge-green' : 'badge-gray')}
+                    style={{ fontFamily:'monospace', fontSize:'0.6rem' }}>{c}</span>
+                ))}
+              </div>
             </div>
-            <div className="p-3 flex flex-wrap gap-1.5">
-              {[
-                { col: 'Fecha de consulta', req: true },
-                { col: 'ID',                req: true },
-                { col: 'JOB_SEQ',          req: true },
-                { col: 'Apellido',          req: false },
-                { col: 'Nombre',            req: false },
-                { col: 'DNI',               req: true },
-                { col: 'TELNUMERO',         req: true },
-                { col: 'TELCODAREA',        req: false },
-                { col: 'Email',             req: false },
-                { col: 'Consulta',          req: false },
-                { col: 'USUARIO_DERIVO',    req: false },
-                { col: 'campania',          req: false },
-                { col: 'websiteName',       req: false },
-                { col: 'entryMethod',       req: false },
-                { col: 'Empresa',           req: false },
-              ].map(f => (
-                <span key={f.col}
-                  className={'badge ' + (f.req ? 'badge-green' : 'badge-gray')}
-                  style={{ fontFamily: 'monospace', fontSize: '0.65rem' }}>
-                  {f.col}
-                </span>
-              ))}
-            </div>
-            <div className="px-3 py-2 text-xs border-t text-gray-600" style={{ borderColor: '#2a2a2a' }}>
-              Verde = requerida · La columna <span style={{ color: BRAND }}>Consulta</span> contiene datos extraíbles con IA (teléfono, email, DNI)
+            <div className="rounded-lg border overflow-hidden" style={{ borderColor:'#2a2a2a' }}>
+              <div className="px-3 py-2 text-xs font-bold text-gray-400 uppercase" style={{ background:'#0a0a0a' }}>Derivado</div>
+              <div className="p-2 flex flex-wrap gap-1">
+                {['Nro Tramite','Fecha de Consulta','Cliente','DNI','Telefono','Celular','Email','Vendedor','Origen','Sub Origen','Campaña','Estado Tramite'].map(c => (
+                  <span key={c} className={'badge ' + (['Nro Tramite','DNI','Telefono','Celular'].includes(c) ? 'badge-green' : 'badge-gray')}
+                    style={{ fontFamily:'monospace', fontSize:'0.6rem' }}>{c}</span>
+                ))}
+              </div>
             </div>
           </div>
         )}
 
-        {/* Drop zone */}
-        <div
-          className={'dropzone ' + (dragging ? 'active' : '') + (file ? ' filled' : '')}
-          onDragOver={e => { e.preventDefault(); setDragging(true) }}
-          onDragLeave={() => setDragging(false)}
-          onDrop={e => { e.preventDefault(); setDragging(false); const f = e.dataTransfer.files[0]; if(f) { setFile(f); setResult(null) } }}
-          onClick={() => fileRef.current.click()}
-        >
-          <input ref={fileRef} type="file" accept=".xls,.xlsx,.csv" className="hidden"
-            onChange={e => { if(e.target.files[0]) { setFile(e.target.files[0]); setResult(null) } }} />
-          <div className="text-2xl mb-1">{file ? '✓' : '↑'}</div>
-          <div className="font-semibold text-sm text-white">
-            {file ? file.name : 'Reporte_Leads_por_Facilitadores.xls'}
-          </div>
-          <div className="text-xs text-gray-500 mt-0.5">
-            {file ? 'Listo para procesar' : 'Clic o arrastrar el archivo del Celer'}
-          </div>
+        <div className="grid grid-cols-2 gap-4 mb-4">
+          <DropZone
+            label="Reporte Leads por Facilitadores"
+            sublabel="Reporte_Leads_por_Facilitadores.xls"
+            badge="badge-green" note="fuente: celer"
+            file={fileFac}
+            onFile={f => { setFileFac(f); setResult(null) }}
+            onClear={() => setFileFac(null)}
+          />
+          <DropZone
+            label="Reporte Derivado"
+            sublabel="Reporte_Derviado.xls"
+            badge="badge-blue" note="fuente: derivado"
+            file={fileDer}
+            onFile={f => { setFileDer(f); setResult(null) }}
+            onClear={() => setFileDer(null)}
+          />
         </div>
 
-        <div className="flex items-center gap-3 mt-3 flex-wrap">
-          <button onClick={procesar} disabled={uploading || !file} className="btn-primary">
+        <div className="flex items-center gap-3 flex-wrap">
+          <button onClick={procesar} disabled={uploading || (!fileFac && !fileDer)} className="btn-primary">
             {uploading ? 'Procesando...' : 'Procesar'}
           </button>
-          {file && !uploading && (
-            <button onClick={() => { setFile(null); setResult(null) }} className="btn-ghost text-xs">
-              Quitar
-            </button>
-          )}
         </div>
 
         {/* Resultado */}
         {result && (
-          <div className="mt-3 p-3 rounded-lg border text-xs space-y-1" style={{ background: '#111', borderColor: '#2a2a2a' }}>
-            {result.guardados > 0
-              ? <div><span style={{ color: BRAND }} className="font-bold">{result.guardados}</span> <span className="text-gray-400">leads guardados de {result.procesados} leídos</span></div>
-              : <div className="text-yellow-400 font-bold">⚠ 0 guardados de {result.procesados} leídos</div>}
+          <div className="mt-3 p-3 rounded-lg border text-xs space-y-2" style={{ background:'#111', borderColor:'#2a2a2a' }}>
+            {result.diagFac && (
+              <div>
+                <span className="font-bold" style={{ color: BRAND }}>Facilitadores: </span>
+                <span className="text-gray-400">{result.guardadosFac} guardados de {result.diagFac.leidos} leídos</span>
+                <span className="text-gray-600 ml-2">· Con ID: {result.diagFac.conNro} · DNI: {result.diagFac.conDNI} · Tel: {result.diagFac.conTel}</span>
+                {result.diagFac.conNro === 0 && (
+                  <div className="text-yellow-400 mt-1">
+                    ⚠ Primer valor en ID: <span className="font-mono">{result.diagFac.primerID}</span> ·
+                    Columnas: <span className="text-gray-500">{result.diagFac.cols.join(' · ')}</span>
+                  </div>
+                )}
+              </div>
+            )}
+            {result.diagDer && (
+              <div>
+                <span className="font-bold" style={{ color: '#60a5fa' }}>Derivado: </span>
+                <span className="text-gray-400">{result.guardadosDer} guardados de {result.diagDer.leidos} leídos</span>
+                <span className="text-gray-600 ml-2">· Con tramite: {result.diagDer.conNro} · DNI: {result.diagDer.conDNI} · Tel: {result.diagDer.conTel}</span>
+              </div>
+            )}
             {result.error && <div className="text-red-400">{result.error}</div>}
-            <div className="text-gray-500">
-              Con ID/nro_tramite: <span className="text-gray-300">{result.conNro}</span> ·
-              Con DNI: <span className="text-gray-300">{result.conDNI}</span> ·
-              Con teléfono: <span className="text-gray-300">{result.conTel}</span> ·
-              Con email: <span className="text-gray-300">{result.conEmail}</span>
-            </div>
-            <div className="text-gray-500">
-              Primer valor en ID: <span className="font-mono" style={{ color: BRAND }}>{result.primerID}</span>
-            </div>
-            <div className="text-gray-600">
-              Columnas detectadas: <span className="text-gray-500">{result.cols?.slice(0,8).join(' · ')}</span>
-            </div>
           </div>
         )}
 
         {/* Botón IA */}
-        <div className="mt-4 pt-4 border-t" style={{ borderColor: '#2a2a2a' }}>
+        <div className="mt-4 pt-4 border-t" style={{ borderColor:'#2a2a2a' }}>
           <div className="flex items-start gap-4">
             <div className="flex-1">
               <div className="text-xs font-bold text-white mb-0.5">Enriquecer leads con IA</div>
               <div className="text-xs text-gray-500">
-                Claude lee la columna CONSULTA y extrae DNI, teléfono y email de los leads que tienen esos campos vacíos.
-                Mejora el cruce en Asignados. Prioridad: DNI → teléfono → email.
+                Claude lee la columna CONSULTA y extrae DNI, teléfono y email faltantes. Mejora el cruce en Asignados.
               </div>
-              {enrichResult && (
-                <div className="mt-1.5 text-xs" style={{ color: BRAND }}>{enrichResult}</div>
-              )}
+              {enrichResult && <div className="mt-1 text-xs" style={{ color: BRAND }}>{enrichResult}</div>}
             </div>
             <button onClick={enriquecerConIA} disabled={enriching} className="btn-primary text-xs whitespace-nowrap flex-shrink-0">
               {enriching ? 'Procesando con IA...' : '✦ Enriquecer con IA'}
@@ -275,6 +306,11 @@ Texto: ${String(lead.consulta).slice(0, 600)}`
         <div className="flex flex-wrap gap-2 mb-4">
           <input className="input-dark w-48" placeholder="Nombre, DNI, teléfono..."
             value={filters.search} onChange={e => sf('search', e.target.value)} />
+          <select className="input-dark w-36" value={filters.fuente} onChange={e => sf('fuente', e.target.value)}>
+            <option value="">Fuente: todas</option>
+            <option value="celer">Facilitadores</option>
+            <option value="derivado">Derivado</option>
+          </select>
           <input className="input-dark w-36" placeholder="Canal..."
             value={filters.canal} onChange={e => sf('canal', e.target.value)} />
           <label className="flex items-center gap-2 text-xs text-gray-400 cursor-pointer self-center">
@@ -282,21 +318,21 @@ Texto: ${String(lead.consulta).slice(0, 600)}`
               onChange={e => sf('campana', e.target.checked ? '1' : '')} className="accent-[#B5E000]" />
             Solo con campaña
           </label>
-          <button onClick={() => { setFilters({ search:'', canal:'', campana:'' }); setPage(0) }}
+          <button onClick={() => { setFilters({ search:'', canal:'', fuente:'', campana:'' }); setPage(0) }}
             className="text-xs text-gray-600 hover:text-gray-300 self-center">Limpiar</button>
         </div>
 
-        <div className="overflow-x-auto rounded-lg border" style={{ borderColor: '#2a2a2a' }}>
+        <div className="overflow-x-auto rounded-lg border" style={{ borderColor:'#2a2a2a' }}>
           <table className="dark-table">
             <thead><tr>
               <th>Fecha</th><th>Cliente</th><th>DNI</th><th>Teléfono</th>
-              <th>Email</th><th>Canal</th><th>Campaña</th><th>Asesor</th>
+              <th>Email</th><th>Canal</th><th>Campaña</th><th>Asesor</th><th>Fuente</th>
             </tr></thead>
             <tbody>
-              {loading && <tr><td colSpan={8} className="text-center py-8 text-gray-600">Cargando...</td></tr>}
+              {loading && <tr><td colSpan={9} className="text-center py-8 text-gray-600">Cargando...</td></tr>}
               {!loading && leads.length === 0 && (
-                <tr><td colSpan={8} className="text-center py-10 text-gray-600">
-                  Sin leads. Subí el Reporte Facilitadores arriba.
+                <tr><td colSpan={9} className="text-center py-10 text-gray-600">
+                  Sin leads. Subí los reportes arriba.
                 </td></tr>
               )}
               {leads.map(l => (
@@ -304,10 +340,10 @@ Texto: ${String(lead.consulta).slice(0, 600)}`
                   <td className="text-gray-500 text-xs whitespace-nowrap">
                     {l.fecha_consulta ? String(l.fecha_consulta).slice(0,10) : '—'}
                   </td>
-                  <td className="font-medium text-white">{l.apellido} {l.nombre}</td>
+                  <td className="font-medium text-white">{l.apellido ? l.apellido + ', ' + l.nombre : l.nombre || '—'}</td>
                   <td className="font-mono text-xs text-gray-400">{l.dni || '—'}</td>
                   <td className="font-mono text-xs text-gray-400">{l.telefono || '—'}</td>
-                  <td className="text-xs text-gray-400 max-w-[140px] truncate">{l.email || '—'}</td>
+                  <td className="text-xs text-gray-400 max-w-[130px] truncate">{l.email || '—'}</td>
                   <td>{l.canal ? <span className="badge badge-blue">{l.canal}</span> : <span className="text-gray-600">—</span>}</td>
                   <td>
                     {l.codigo_campana
@@ -315,6 +351,11 @@ Texto: ${String(lead.consulta).slice(0, 600)}`
                       : <span className="text-gray-600">—</span>}
                   </td>
                   <td className="text-gray-400 text-xs">{l.vendedor || '—'}</td>
+                  <td>
+                    <span className={'badge ' + (l.fuente === 'celer' ? 'badge-green' : 'badge-blue')}>
+                      {l.fuente === 'celer' ? 'Facilitadores' : 'Derivado'}
+                    </span>
+                  </td>
                 </tr>
               ))}
             </tbody>
