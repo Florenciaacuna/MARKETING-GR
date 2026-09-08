@@ -35,12 +35,20 @@ export default function Asignados() {
   const [running,  setRunning]  = useState(false)
   const [runLog,   setRunLog]   = useState([])
   const [page,     setPage]     = useState(0)
-  const [filters,  setFilters]  = useState({ search: '', marca: '', tipo: '', campana_id: '', canal: '' })
+  const [filters,  setFilters]  = useState({ search: '', tipo: '', campana_id: '', mes: '', tab_override: '' })
   const [campanas, setCampanas] = useState([])
+  const [meses,    setMeses]    = useState([])
 
   useEffect(() => {
     supabase.from('mkt_campanas').select('id,nombre').order('nombre')
       .then(({ data }) => setCampanas(data || []))
+    // Traer meses disponibles de ventas
+    supabase.from('mkt_ventas').select('fecha').not('fecha','is',null)
+      .then(({ data }) => {
+        if (!data) return
+        const unicos = [...new Set(data.map(r => r.fecha?.slice(0,7)).filter(Boolean))].sort().reverse()
+        setMeses(unicos)
+      })
   }, [])
 
   const loadStats = useCallback(async () => {
@@ -64,9 +72,9 @@ export default function Asignados() {
       .range(page * PAGE, (page + 1) * PAGE - 1)
     if (tab === 'digital') q = q.not('lead_id', 'is', null)
     else q = q.is('lead_id', null)
-    if (filters.marca)      q = q.ilike('marca', '%' + filters.marca + '%')
-    if (filters.tipo)       q = q.ilike('tipo',  '%' + filters.tipo  + '%')
+    if (filters.tipo)       q = q.ilike('tipo',  '%' + filters.tipo + '%')
     if (filters.campana_id) q = q.eq('campana_id', filters.campana_id)
+    if (filters.mes)        q = q.gte('fecha', filters.mes + '-01').lte('fecha', filters.mes + '-31')
     if (filters.search)     q = q.or('nombre.ilike.%' + filters.search + '%,dni.eq.' + filters.search + ',pv_solicitud.ilike.%' + filters.search + '%')
     const { data: rows } = await q
     setData(rows || [])
@@ -292,24 +300,22 @@ export default function Asignados() {
 
         {/* Filtros */}
         <div className="flex flex-wrap gap-2 mb-4">
-          <input className="input-dark w-44" placeholder="Nombre, DNI, PV..."
+
+          {/* Mes */}
+          <select className="input-dark w-36" value={filters.mes} onChange={e => sf('mes', e.target.value)}>
+            <option value="">Mes: todos</option>
+            {meses.map(m => (
+              <option key={m} value={m}>
+                {new Date(m + '-15').toLocaleString('es-AR', { month: 'long', year: 'numeric' })}
+              </option>
+            ))}
+          </select>
+
+          {/* Cliente */}
+          <input className="input-dark w-44" placeholder="Cliente, DNI, PV..."
             value={filters.search} onChange={e => sf('search', e.target.value)} />
 
-          <select className="input-dark w-36" value={filters.tipo} onChange={e => sf('tipo', e.target.value)}>
-            <option value="">Tipo: todos</option>
-            <option>0KM</option>
-            <option>USADO</option>
-            <option>PLAN AHORRO</option>
-          </select>
-
-          <select className="input-dark w-32" value={filters.marca} onChange={e => sf('marca', e.target.value)}>
-            <option value="">Marca: todas</option>
-            <option>KIARA</option>
-            <option>CIARA</option>
-            <option>PEARA</option>
-            <option>MOVILIS</option>
-          </select>
-
+          {/* Campaña */}
           <select className="input-dark w-48" value={filters.campana_id} onChange={e => sf('campana_id', e.target.value)}>
             <option value="">Campaña: todas</option>
             {campanas.map(c => (
@@ -317,10 +323,15 @@ export default function Asignados() {
             ))}
           </select>
 
-          <input className="input-dark w-36" placeholder="Canal lead..."
-            value={filters.canal} onChange={e => sf('canal', e.target.value)} />
+          {/* Tipo */}
+          <select className="input-dark w-36" value={filters.tipo} onChange={e => sf('tipo', e.target.value)}>
+            <option value="">Tipo: todos</option>
+            <option>0KM</option>
+            <option>USADO</option>
+            <option>PLAN AHORRO</option>
+          </select>
 
-          <button onClick={() => { setFilters({ search:'', marca:'', tipo:'', campana_id:'', canal:'' }); setPage(0) }}
+          <button onClick={() => { setFilters({ search:'', tipo:'', campana_id:'', mes:'', tab_override:'' }); setPage(0) }}
             className="text-xs text-gray-600 hover:text-gray-300 self-center">
             Limpiar
           </button>
@@ -353,10 +364,7 @@ export default function Asignados() {
                     : 'Todas las ventas tienen lead asignado.'}
                 </td></tr>
               )}
-              {(filters.canal
-                ? data.filter(v => v.mkt_leads?.canal?.toLowerCase().includes(filters.canal.toLowerCase()))
-                : data
-              ).map(v => {
+              {data.map(v => {
                 const lead = v.mkt_leads
                 return (
                   <tr key={v.id}>
