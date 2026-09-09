@@ -315,8 +315,20 @@ export function normalizeEntregaRow(row) {
 
   let fechaEntrega = null
   const fv = row['FECHAENTREGA']
-  if (fv instanceof Date) fechaEntrega = fv.toISOString().split('T')[0]
-  else if (fv) fechaEntrega = normalizeDate(fv)
+  if (fv instanceof Date) {
+    // Date object de SheetJS con cellDates:true
+    fechaEntrega = fv.toISOString().split('T')[0]
+  } else if (typeof fv === 'number') {
+    // Serial de Excel (ej: 46698 = 25/08/2026)
+    const d = new Date(Math.round((fv - 25569) * 86400 * 1000))
+    fechaEntrega = d.toISOString().split('T')[0]
+  } else if (fv) {
+    const s = String(fv).trim()
+    // yyyy-mm-dd HH:MM:SS o yyyy-mm-dd
+    if (/^\d{4}-\d{2}-\d{2}/.test(s)) fechaEntrega = s.slice(0, 10)
+    // dd/mm/yyyy HH:MM:SS o dd/mm/yyyy
+    else fechaEntrega = normalizeDate(s)
+  }
 
   return {
     fecha_entrega: fechaEntrega,
