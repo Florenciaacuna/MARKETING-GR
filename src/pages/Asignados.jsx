@@ -66,7 +66,7 @@ export default function Asignados() {
       ? q.gte('fecha', filters.mes + '-01').lte('fecha', filters.mes + '-31')
       : q
     const [r1, r2, r3, r4] = await Promise.all([
-      applyMes(supabase.from('mkt_ventas').select('*', { count: 'exact', head: true })).not('lead_id', 'is', null),
+      applyMes(supabase.from('mkt_ventas').select('*', { count: 'exact', head: true })).not('lead_id','is',null).or('lead_origen.is.null,lead_origen.neq.De paso'),
       applyMes(supabase.from('mkt_ventas').select('*', { count: 'exact', head: true })).is('lead_id', null),
       applyMes(supabase.from('mkt_ventas').select('*', { count: 'exact', head: true })),
       supabase.from('mkt_leads').select('*', { count: 'exact', head: true }),
@@ -84,14 +84,16 @@ export default function Asignados() {
     }
     let q = supabase.from('mkt_ventas')
       .select(`id,pv_solicitud,fecha,tipo,nombre,dni,telefono_personal,celular_personal,
-               vendedor,marca,fuente,metodo_match,lead_id,campana_id,proceso,
+               vendedor,marca,fuente,metodo_match,lead_id,campana_id,proceso,lead_origen,
                mkt_campanas!mkt_ventas_campana_id_fkey(id,nombre),
                mkt_leads!mkt_ventas_lead_id_fkey(id,nro_tramite,canal,codigo_campana,origen,fecha_consulta)`,
         { count: 'exact' })
       .order('fecha', { ascending: false })
       .range(page * PAGE, (page + 1) * PAGE - 1)
-    if (tab === 'digital') q = q.not('lead_id', 'is', null)
-    else q = q.is('lead_id', null)
+    if (tab === 'digital') {
+      q = q.not('lead_id', 'is', null)
+      q = q.or('lead_origen.is.null,lead_origen.neq.De paso')  // excluir De paso del tab digital
+    } else q = q.is('lead_id', null)
     if (filters.tipo)    q = q.ilike('tipo', '%' + filters.tipo + '%')
     if (filters.mes)     q = q.gte('fecha', filters.mes + '-01').lte('fecha', filters.mes + '-31')
     if (filters.search)  q = q.or('nombre.ilike.%' + filters.search + '%,dni.eq.' + filters.search + ',pv_solicitud.ilike.%' + filters.search + '%')
@@ -130,7 +132,7 @@ export default function Asignados() {
     let allVentas = []; from = 0
     while (true) {
       const { data: batch } = await supabase.from('mkt_ventas')
-        .select('id,dni,telefono_personal,celular_personal,proceso')
+        .select('id,dni,telefono_personal,celular_personal,proceso,lead_origen')
         .range(from, from + 999)
       if (!batch || batch.length === 0) break
       allVentas = allVentas.concat(batch)
@@ -171,7 +173,7 @@ export default function Asignados() {
       if (!lead) for (const p of vPhones) if (byPhone.has(p))  { lead = byPhone.get(p);  metodo = 'telefono'; matchTel++;  break }
       if (!lead) for (const p of vPhones) { const p8 = p.slice(-8); if (p8.length===8 && byPhone8.has(p8)) { lead = byPhone8.get(p8); metodo = 'tel_parcial'; matchTel8++; break } }
       if (!lead) sinMatch++
-      updates.push({ id: v.id, lead_id: lead?.id||null, campana_id: lead?.campana_id||null, metodo_match: metodo })
+      updates.push({ id: v.id, lead_id: lead?.id||null, campana_id: lead?.campana_id||null, metodo_match: metodo, lead_origen: lead?.origen||null })
     }
     log('Matches → JOB_SEQ: ' + matchProceso + ' | DNI: ' + matchDNI + ' | Tel exacto: ' + matchTel + ' | Tel 8 díg: ' + matchTel8 + ' | Sin match: ' + sinMatch)
 
@@ -179,7 +181,7 @@ export default function Asignados() {
     for (let i = 0; i < updates.length; i += 100) {
       const batch = updates.slice(i, i + 100)
       await Promise.all(batch.map(u =>
-        supabase.from('mkt_ventas').update({ lead_id: u.lead_id, campana_id: u.campana_id, metodo_match: u.metodo_match }).eq('id', u.id)
+        supabase.from('mkt_ventas').update({ lead_id: u.lead_id, campana_id: u.campana_id, metodo_match: u.metodo_match, lead_origen: u.lead_origen }).eq('id', u.id)
       ))
     }
     log('Cruce completado. ' + updates.length + ' ventas actualizadas.')
@@ -280,7 +282,7 @@ export default function Asignados() {
       <div className="card">
         <div className="flex gap-1 border-b mb-4" style={{ borderColor:'#2a2a2a' }}>
           {[
-            { id:'digital', label:'Con lead digital (' + (stats?.digital||0) + ')' },
+            { id:'digital', label:'Lead digital / llamada (' + (stats?.digital||0) + ')' },
             { id:'otros',   label:'Sin lead (' + (stats?.otros||0) + ')' },
           ].map(t => (
             <button key={t.id} onClick={() => { setTab(t.id); setPage(0) }}
