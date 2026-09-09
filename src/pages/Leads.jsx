@@ -296,30 +296,36 @@ export default function Leads() {
 
       {/* TABLA */}
       <div className="card">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="font-bold text-white text-base">
-            Leads cargados
-            <span className="text-gray-500 font-normal text-sm ml-2">{total.toLocaleString('es-AR')} registros</span>
-          </h2>
+        <div className="section-header">
+          <h2>Leads cargados</h2>
+          <span className="count-badge">{total.toLocaleString('es-AR')} registros</span>
+        </div>
+        <div className="filter-results">
+          Mostrando <span>{leads.length}</span> de <span>{total.toLocaleString('es-AR')}</span> leads
+          {filters.fuente && <> · Fuente: <span>{filters.fuente === 'celer' ? 'Facilitadores' : 'Derivado'}</span></>}
+          {filters.canal && <> · Canal: <span>{filters.canal}</span></>}
         </div>
 
-        <div className="flex flex-wrap gap-2 mb-4">
-          <input className="input-dark w-48" placeholder="Nombre, DNI, teléfono..."
+        <div className="filter-bar">
+          <input className="input-dark" style={{ width: 210 }} placeholder="Buscar nombre, DNI, teléfono..."
             value={filters.search} onChange={e => sf('search', e.target.value)} />
-          <select className="input-dark w-36" value={filters.fuente} onChange={e => sf('fuente', e.target.value)}>
+          <div className="filter-sep"/>
+          <select className="input-dark" style={{ width: 150 }} value={filters.fuente} onChange={e => sf('fuente', e.target.value)}>
             <option value="">Fuente: todas</option>
             <option value="celer">Facilitadores</option>
             <option value="derivado">Derivado</option>
           </select>
-          <input className="input-dark w-36" placeholder="Canal..."
+          <input className="input-dark" style={{ width: 140 }} placeholder="Canal lead..."
             value={filters.canal} onChange={e => sf('canal', e.target.value)} />
-          <label className="flex items-center gap-2 text-xs text-gray-400 cursor-pointer self-center">
+          <div className="filter-sep"/>
+          <label className="flex items-center gap-2 text-xs text-gray-400 cursor-pointer flex-shrink-0">
             <input type="checkbox" checked={!!filters.campana}
               onChange={e => sf('campana', e.target.checked ? '1' : '')} className="accent-[#B5E000]" />
-            Solo con campaña
+            Con campaña
           </label>
+          <div className="filter-sep"/>
           <button onClick={() => { setFilters({ search:'', canal:'', fuente:'', campana:'' }); setPage(0) }}
-            className="text-xs text-gray-600 hover:text-gray-300 self-center">Limpiar</button>
+            className="btn-ghost text-xs flex-shrink-0">Limpiar filtros</button>
         </div>
 
         <div className="overflow-x-auto rounded-lg border" style={{ borderColor:'#2a2a2a' }}>
