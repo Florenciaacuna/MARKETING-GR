@@ -16,7 +16,8 @@ function isRealXLSX(buffer) {
 function parseXLSXBuffer(buffer) {
   const workbook = XLSX.read(buffer, { type: 'array', cellDates: true })
   const sheet = workbook.Sheets[workbook.SheetNames[0]]
-  return XLSX.utils.sheet_to_json(sheet, { defval: null, raw: false, dateNF: 'dd/mm/yyyy' })
+  // raw:true + cellDates:true → fechas como Date objects, números como números
+  return XLSX.utils.sheet_to_json(sheet, { defval: null, raw: true, cellDates: true })
 }
 
 function parseCSVSemicolon(text) {
@@ -316,18 +317,15 @@ export function normalizeEntregaRow(row) {
   let fechaEntrega = null
   const fv = row['FECHAENTREGA']
   if (fv instanceof Date) {
-    // Date object de SheetJS con cellDates:true
     fechaEntrega = fv.toISOString().split('T')[0]
-  } else if (typeof fv === 'number') {
-    // Serial de Excel (ej: 46698 = 25/08/2026)
-    const d = new Date(Math.round((fv - 25569) * 86400 * 1000))
+  } else if (typeof fv === 'number' && fv > 0) {
+    // Serial de Excel → Date
+    const d = new Date(Date.UTC(1900, 0, 1))
+    d.setUTCDate(d.getUTCDate() + Math.floor(fv) - 2)
     fechaEntrega = d.toISOString().split('T')[0]
   } else if (fv) {
     const s = String(fv).trim()
-    // yyyy-mm-dd HH:MM:SS o yyyy-mm-dd
-    if (/^\d{4}-\d{2}-\d{2}/.test(s)) fechaEntrega = s.slice(0, 10)
-    // dd/mm/yyyy HH:MM:SS o dd/mm/yyyy
-    else fechaEntrega = normalizeDate(s)
+    fechaEntrega = /^\d{4}-\d{2}-\d{2}/.test(s) ? s.slice(0, 10) : normalizeDate(s)
   }
 
   return {
