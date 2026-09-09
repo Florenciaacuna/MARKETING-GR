@@ -86,8 +86,7 @@ export default function Asignados() {
       .select(`id,pv_solicitud,fecha,tipo,nombre,dni,telefono_personal,celular_personal,
                vendedor,marca,fuente,metodo_match,lead_id,campana_id,proceso,lead_origen,
                mkt_campanas!mkt_ventas_campana_id_fkey(id,nombre),
-               mkt_leads!mkt_ventas_lead_id_fkey(id,nro_tramite,canal,codigo_campana,origen,fecha_consulta),
-               mkt_entregas!mkt_entregas_venta_id_fkey(id,fecha_entrega,salon,sistema)`,
+               mkt_leads!mkt_ventas_lead_id_fkey(id,nro_tramite,canal,codigo_campana,origen,fecha_consulta)`,
         { count: 'exact' })
       .order('fecha', { ascending: false })
       .range(page * PAGE, (page + 1) * PAGE - 1)
@@ -103,7 +102,20 @@ export default function Asignados() {
       else q = q.eq('id', '00000000-0000-0000-0000-000000000000')
     }
     const { data: rows } = await q
-    setData(rows || [])
+    if (!rows || rows.length === 0) { setData([]); setLoading(false); return }
+
+    // Cargar entregas para estas ventas
+    const ventaIds = rows.map(r => r.id).filter(Boolean)
+    const { data: entregas } = await supabase.from('mkt_entregas')
+      .select('id,venta_id,fecha_entrega,salon,sistema')
+      .in('venta_id', ventaIds)
+
+    // Mergear entregas en las ventas
+    const entregaMap = {}
+    if (entregas) entregas.forEach(e => { entregaMap[e.venta_id] = e })
+    const rowsConEntrega = rows.map(r => ({ ...r, entrega: entregaMap[r.id] || null }))
+
+    setData(rowsConEntrega)
     setLoading(false)
   }, [tab, page, filters])
 
@@ -357,8 +369,8 @@ export default function Asignados() {
               {data.filter(v => {
                 if (tab === 'digital' && v.lead_origen === 'De paso') return false
                 if (filters.origen) return (v.mkt_leads?.origen || v.lead_origen || '') === filters.origen
-                if (filters.entrega === 'con') return Array.isArray(v.mkt_entregas) ? v.mkt_entregas.length > 0 : !!v.mkt_entregas
-                if (filters.entrega === 'sin') return Array.isArray(v.mkt_entregas) ? v.mkt_entregas.length === 0 : !v.mkt_entregas
+                if (filters.entrega === 'con') return !!v.entrega
+                if (filters.entrega === 'sin') return !v.entrega
                 return true
               }).map(v => {
                 const lead = v.mkt_leads
@@ -467,17 +479,12 @@ export default function Asignados() {
                       </td>
 
                       {/* ENTREGA */}
-                      {(() => {
-                        const ent = Array.isArray(v.mkt_entregas) ? v.mkt_entregas[0] : v.mkt_entregas
-                        return <>
-                          <td className="text-xs whitespace-nowrap">
-                            {ent?.fecha_entrega
-                              ? <span style={{ color: BRAND }}>{String(ent.fecha_entrega).slice(0,10).split('-').reverse().join('/')}</span>
-                              : <span className="text-gray-600">—</span>}
-                          </td>
-                          <td className="text-xs text-gray-400">{ent?.salon || '—'}</td>
-                        </>
-                      })()}
+                      <td className="text-xs whitespace-nowrap">
+                        {v.entrega?.fecha_entrega
+                          ? <span style={{ color: BRAND }}>{String(v.entrega.fecha_entrega).slice(0,10).split('-').reverse().join('/')}</span>
+                          : <span className="text-gray-600">—</span>}
+                      </td>
+                      <td className="text-xs text-gray-400">{v.entrega?.salon || '—'}</td>
                     </>}
 
                     {tab === 'otros' && <td><span className="badge badge-gray">Sin coincidencia</span></td>}
