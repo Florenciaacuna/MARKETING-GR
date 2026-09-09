@@ -76,12 +76,24 @@ export default function Asignados() {
 
   const loadData = useCallback(async () => {
     setLoading(true)
+
+    // 1. Filtro campaña
     let leadIdsFiltro = null
     if (filters.campana_codigo) {
       const { data: ml } = await supabase.from('mkt_leads')
         .select('id').eq('codigo_campana', filters.campana_codigo)
       leadIdsFiltro = (ml || []).map(l => l.id)
     }
+
+    // 2. Filtro entrega — obtener IDs de ventas con entrega
+    let ventasConEntregaIds = null
+    if (filters.entrega) {
+      const { data: ents } = await supabase.from('mkt_entregas')
+        .select('venta_id').not('venta_id', 'is', null)
+      ventasConEntregaIds = new Set((ents || []).map(e => e.venta_id).filter(Boolean))
+    }
+
+    // 3. Query principal
     let q = supabase.from('mkt_ventas')
       .select(`id,pv_solicitud,fecha,tipo,nombre,dni,telefono_personal,celular_personal,
                vendedor,marca,fuente,metodo_match,lead_id,campana_id,proceso,lead_origen,
@@ -90,32 +102,42 @@ export default function Asignados() {
         { count: 'exact' })
       .order('fecha', { ascending: false })
       .range(page * PAGE, (page + 1) * PAGE - 1)
+
     if (tab === 'digital') q = q.not('lead_id', 'is', null)
     else q = q.is('lead_id', null)
-    if (filters.tipo)    q = q.ilike('tipo', '%' + filters.tipo + '%')
-    if (filters.mes)     q = q.gte('fecha', filters.mes + '-01').lte('fecha', filters.mes + '-31')
-    if (filters.search)  q = q.or('nombre.ilike.%' + filters.search + '%,dni.eq.' + filters.search + ',pv_solicitud.ilike.%' + filters.search + '%')
-    // Filtro por origen: filtra por lead_id donde el lead tiene ese origen
-    // Se aplica client-side después de cargar (origen viene del join)
+    if (filters.tipo)   q = q.ilike('tipo', '%' + filters.tipo + '%')
+    if (filters.mes)    q = q.gte('fecha', filters.mes + '-01').lte('fecha', filters.mes + '-31')
+    if (filters.search) q = q.or('nombre.ilike.%' + filters.search + '%,dni.eq.' + filters.search + ',pv_solicitud.ilike.%' + filters.search + '%')
     if (leadIdsFiltro !== null) {
       if (leadIdsFiltro.length > 0) q = q.in('lead_id', leadIdsFiltro)
       else q = q.eq('id', '00000000-0000-0000-0000-000000000000')
     }
+    // Filtro entrega en servidor
+    if (filters.entrega === 'con' && ventasConEntregaIds) {
+      const ids = [...ventasConEntregaIds]
+      if (ids.length > 0) q = q.in('id', ids)
+      else q = q.eq('id', '00000000-0000-0000-0000-000000000000')
+    }
+
     const { data: rows } = await q
     if (!rows || rows.length === 0) { setData([]); setLoading(false); return }
 
-    // Cargar entregas para estas ventas
-    const ventaIds = rows.map(r => r.id).filter(Boolean)
-    const { data: entregas } = await supabase.from('mkt_entregas')
+    // 4. Cargar entregas para las ventas de esta página y mergear
+    const pageIds = rows.map(r => r.id)
+    const { data: entsPage } = await supabase.from('mkt_entregas')
       .select('id,venta_id,fecha_entrega,salon,sistema')
-      .in('venta_id', ventaIds)
+      .in('venta_id', pageIds)
+    const entMap = {}
+    if (entsPage) entsPage.forEach(e => { entMap[e.venta_id] = e })
 
-    // Mergear entregas en las ventas
-    const entregaMap = {}
-    if (entregas) entregas.forEach(e => { entregaMap[e.venta_id] = e })
-    const rowsConEntrega = rows.map(r => ({ ...r, entrega: entregaMap[r.id] || null }))
+    let rowsFinal = rows.map(r => ({ ...r, entrega: entMap[r.id] || null }))
 
-    setData(rowsConEntrega)
+    // Filtro "sin entrega" client-side
+    if (filters.entrega === 'sin' && ventasConEntregaIds) {
+      rowsFinal = rowsFinal.filter(r => !ventasConEntregaIds.has(r.id))
+    }
+
+    setData(rowsFinal)
     setLoading(false)
   }, [tab, page, filters])
 
@@ -369,8 +391,6 @@ export default function Asignados() {
               {data.filter(v => {
                 if (tab === 'digital' && v.lead_origen === 'De paso') return false
                 if (filters.origen) return (v.mkt_leads?.origen || v.lead_origen || '') === filters.origen
-                if (filters.entrega === 'con') return !!v.entrega
-                if (filters.entrega === 'sin') return !v.entrega
                 return true
               }).map(v => {
                 const lead = v.mkt_leads
