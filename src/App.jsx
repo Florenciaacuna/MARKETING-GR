@@ -6,7 +6,6 @@ import Dashboard     from './pages/Dashboard'
 import Leads         from './pages/Leads'
 import Ventas        from './pages/Ventas'
 import Asignados     from './pages/Asignados'
-import Entregas from './pages/Entregas'
 import Campanas      from './pages/Campanas'
 
 const BRAND = '#B5E000'
