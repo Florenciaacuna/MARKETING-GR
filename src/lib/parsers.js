@@ -302,6 +302,32 @@ export function normalizeDerivadoLeadRow(row) {
   }
 }
 
+
+// REPORTE HISTORIAL ENTREGAS
+// Cols: FECHAENTREGA, SISTEMA, TIPOPREVENTA, DESCRIPCIONTIPOPREVENTA,
+//       VENDEDOR, SALON, PREVENTA, MOVILIS, USUARIO
+// Excluir: DESCRIPCIONTIPOPREVENTA = 'Venta Especial'
+export function normalizeEntregaRow(row) {
+  const desc = String(row['DESCRIPCIONTIPOPREVENTA'] || '').trim()
+  if (desc === 'Venta Especial') return null
+
+  const preventa = row['PREVENTA'] ? String(row['PREVENTA']).trim() : null
+
+  let fechaEntrega = null
+  const fv = row['FECHAENTREGA']
+  if (fv instanceof Date) fechaEntrega = fv.toISOString().split('T')[0]
+  else if (fv) fechaEntrega = normalizeDate(fv)
+
+  return {
+    fecha_entrega: fechaEntrega,
+    sistema:       row['SISTEMA'] || null,
+    tipo_preventa: desc || row['TIPOPREVENTA'] || null,
+    vendedor:      row['VENDEDOR'] || null,
+    salon:         row['SALON'] || null,
+    preventa,
+  }
+}
+
 // Alias para compatibilidad con código anterior
 export const normalizeK1Row = normalizePVRow
 export const normalizeDerivadoRow = normalizeDerivadoVentaRow
