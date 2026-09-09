@@ -32,6 +32,7 @@ export default function Asignados() {
   const [filters,       setFilters]       = useState({ search: '', tipo: '', campana_codigo: '', mes: '' })
   const [meses,         setMeses]         = useState([])
   const [codigosCampana,setCodigosCampana]= useState([])
+  const [campanas,      setCampanas]      = useState([])
   // Edición inline
   const [editing,  setEditing]  = useState(null)  // { id, field, value, leadId }
   const [saving,   setSaving]   = useState(false)
@@ -49,6 +50,8 @@ export default function Asignados() {
         const u = [...new Set(data.map(r => r.codigo_campana).filter(Boolean))].sort()
         setCodigosCampana(u)
       })
+    supabase.from('mkt_campanas').select('id,nombre').order('nombre')
+      .then(({ data }) => setCampanas(data || []))
   }, [])
 
   const loadStats = useCallback(async () => {
@@ -75,6 +78,7 @@ export default function Asignados() {
     let q = supabase.from('mkt_ventas')
       .select(`id,pv_solicitud,fecha,tipo,nombre,dni,telefono_personal,celular_personal,
                vendedor,marca,fuente,metodo_match,lead_id,campana_id,proceso,
+               mkt_campanas!mkt_ventas_campana_id_fkey(id,nombre),
                mkt_leads!mkt_ventas_lead_id_fkey(id,nro_tramite,canal,codigo_campana,origen,fecha_consulta)`,
         { count: 'exact' })
       .order('fecha', { ascending: false })
@@ -180,6 +184,8 @@ export default function Asignados() {
     const { id, field, value, leadId } = editing
     if (field === 'metodo_match') {
       await supabase.from('mkt_ventas').update({ metodo_match: value || null }).eq('id', id)
+    } else if (field === 'campana_id') {
+      await supabase.from('mkt_ventas').update({ campana_id: value || null }).eq('id', id)
     } else if ((field === 'canal' || field === 'codigo_campana') && leadId) {
       await supabase.from('mkt_leads').update({ [field]: value || null }).eq('id', leadId)
     }
@@ -317,7 +323,7 @@ export default function Asignados() {
             <thead><tr>
               <th>PV/Solicitud</th><th>Fecha</th><th>Tipo</th><th>Cliente</th>
               <th>DNI</th><th>Vendedor</th><th>Marca</th>
-              {tab === 'digital' && <><th>Canal lead</th><th>Campaña</th><th>Match</th></>}
+              {tab === 'digital' && <><th>Canal lead</th><th>Cód. campaña</th><th>Campaña vinculada</th><th>Match</th></>}
               {tab === 'otros' && <th>Estado</th>}
             </tr></thead>
             <tbody>
@@ -375,6 +381,31 @@ export default function Asignados() {
                         ) : (
                           <div className="cursor-pointer group">
                             {lead?.codigo_campana ? <span className="badge badge-green">[{lead.codigo_campana}]</span> : <span className="text-gray-600 text-xs">—</span>}
+                            <span className="opacity-0 group-hover:opacity-50 text-xs ml-1">✏</span>
+                          </div>
+                        )}
+                      </td>
+
+                      {/* CAMPAÑA VINCULADA (mkt_campanas) — editable con dropdown */}
+                      <td onClick={() => !editing && setEditing({ id: v.id, field: 'campana_id', value: v.campana_id || '', leadId: null })}>
+                        {editing?.id === v.id && editing?.field === 'campana_id' ? (
+                          <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
+                            <select autoFocus className="input-dark text-xs" style={{ width: 160, padding: '2px 6px', height: 24 }}
+                              value={editing.value}
+                              onChange={e => setEditing(p => ({ ...p, value: e.target.value }))}>
+                              <option value="">— Sin campaña</option>
+                              {campanas.map(c => (
+                                <option key={c.id} value={c.id}>{c.nombre}</option>
+                              ))}
+                            </select>
+                            <button onClick={saveEdit} disabled={saving} style={{ color: BRAND, fontSize: 11 }}>{saving?'...':'✓'}</button>
+                            <button onClick={() => setEditing(null)} className="text-gray-600 text-xs">✕</button>
+                          </div>
+                        ) : (
+                          <div className="cursor-pointer group">
+                            {v.mkt_campanas?.nombre
+                              ? <span className="badge badge-green">{v.mkt_campanas.nombre}</span>
+                              : <span className="text-gray-600 text-xs">— asignar</span>}
                             <span className="opacity-0 group-hover:opacity-50 text-xs ml-1">✏</span>
                           </div>
                         )}
