@@ -199,7 +199,8 @@ export function normalizeFacilitadoresRow(row) {
   const emailFinal = row['Email'] || mailConsulta
 
   return {
-    nro_tramite:    row['ID'] || row['JOB_SEQ'] || null,
+    nro_tramite:    row['ID'] ? String(row['ID']) : (row['JOB_SEQ'] ? String(row['JOB_SEQ']) : null),
+    job_seq:        row['JOB_SEQ'] ? String(row['JOB_SEQ']) : null,
     fecha_consulta: normalizeDatetime(row['Fecha de consulta']),
     apellido:       row['Apellido'] || null,
     nombre:         row['Nombre'] || null,
