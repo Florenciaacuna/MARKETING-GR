@@ -82,6 +82,15 @@ export default function Ventas() {
           </button>
         </div>
 
+        <div className="info-box">
+          <span className="info-icon">ℹ</span>
+          <div>
+            <strong>¿Cómo funciona?</strong> Descargá el Reporte PV Vinculadas del CRM Celer y subilo sin modificarlo.
+            El sistema filtra automáticamente las filas <em>NO USAR</em> y los registros <em>/45</em>.
+            Cada vez que subís un archivo nuevo, actualiza los registros existentes sin duplicar.
+          </div>
+        </div>
+
         {showFmt && (
           <div className="mb-4 rounded-lg border overflow-hidden" style={{ borderColor: '#2a2a2a' }}>
             <div className="px-3 py-2 text-xs font-bold text-gray-500 uppercase tracking-wide" style={{ background: '#0a0a0a' }}>
@@ -163,11 +172,14 @@ export default function Ventas() {
 
       {/* TABLA */}
       <div className="card">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="font-bold text-white text-base">
-            Ventas cargadas
-            <span className="text-gray-500 font-normal text-sm ml-2">{total.toLocaleString('es-AR')} registros</span>
-          </h2>
+        <div className="section-header">
+          <h2>Ventas y preventas cargadas</h2>
+          <span className="count-badge">{total.toLocaleString('es-AR')} registros</span>
+        </div>
+        <div className="filter-results">
+          Mostrando <span>{ventas.length}</span> de <span>{total.toLocaleString('es-AR')}</span> ventas
+          {filters.tipo && <> · Tipo: <span>{filters.tipo}</span></>}
+          {filters.marca && <> · Marca: <span>{filters.marca}</span></>}
         </div>
 
         <div className="flex flex-wrap gap-2 mb-4">
