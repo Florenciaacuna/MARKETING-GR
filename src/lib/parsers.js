@@ -208,7 +208,7 @@ export function normalizeFacilitadoresRow(row) {
     telefono:       telFinal,
     celular:        null,
     email:          emailFinal,
-    origen:         row['Empresa'] || null,
+    origen:         'Internet',  // Facilitadores = siempre digital
     sub_origen:     row['Rubro'] || null,
     canal:          row['websiteName'] || row['entryMethod'] || row['clave_atencion'] || null,
     codigo_campana: codigoCampana,
@@ -280,7 +280,15 @@ export function normalizeDerivadoLeadRow(row) {
     telefono:       normalizePhone(row['Telefono']),
     celular:        normalizePhone(row['Celular']),
     email:          row['Email'] || null,
-    origen:         row['Origen'] || null,
+    origen: (() => {
+      const o = String(row['Origen'] || '').trim()
+      if (!o) return null
+      const l = o.toLowerCase()
+      if (l.includes('internet')) return 'Internet'
+      if (l.includes('paso'))     return 'De paso'
+      if (l.includes('llamada') || l.includes('entrante')) return 'Llamadas entrantes'
+      return o
+    })(),
     sub_origen:     row['Sub Origen'] || null,
     canal:          row['Metodo De Ingreso'] || row['Sistema'] || null,
     codigo_campana: codigoCampana,
