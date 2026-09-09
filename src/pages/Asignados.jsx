@@ -357,8 +357,8 @@ export default function Asignados() {
               {data.filter(v => {
                 if (tab === 'digital' && v.lead_origen === 'De paso') return false
                 if (filters.origen) return (v.mkt_leads?.origen || v.lead_origen || '') === filters.origen
-                if (filters.entrega === 'con') return !!v.mkt_entregas
-                if (filters.entrega === 'sin') return !v.mkt_entregas
+                if (filters.entrega === 'con') return Array.isArray(v.mkt_entregas) ? v.mkt_entregas.length > 0 : !!v.mkt_entregas
+                if (filters.entrega === 'sin') return Array.isArray(v.mkt_entregas) ? v.mkt_entregas.length === 0 : !v.mkt_entregas
                 return true
               }).map(v => {
                 const lead = v.mkt_leads
@@ -467,14 +467,17 @@ export default function Asignados() {
                       </td>
 
                       {/* ENTREGA */}
-                      <td className="text-xs whitespace-nowrap">
-                        {v.mkt_entregas
-                          ? <span style={{ color: BRAND }}>{String(v.mkt_entregas.fecha_entrega || '').slice(0,10).split('-').reverse().join('/')}</span>
-                          : <span className="text-gray-600">—</span>}
-                      </td>
-                      <td className="text-xs text-gray-400">
-                        {v.mkt_entregas?.salon || '—'}
-                      </td>
+                      {(() => {
+                        const ent = Array.isArray(v.mkt_entregas) ? v.mkt_entregas[0] : v.mkt_entregas
+                        return <>
+                          <td className="text-xs whitespace-nowrap">
+                            {ent?.fecha_entrega
+                              ? <span style={{ color: BRAND }}>{String(ent.fecha_entrega).slice(0,10).split('-').reverse().join('/')}</span>
+                              : <span className="text-gray-600">—</span>}
+                          </td>
+                          <td className="text-xs text-gray-400">{ent?.salon || '—'}</td>
+                        </>
+                      })()}
                     </>}
 
                     {tab === 'otros' && <td><span className="badge badge-gray">Sin coincidencia</span></td>}
