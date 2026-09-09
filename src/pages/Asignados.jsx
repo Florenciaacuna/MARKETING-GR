@@ -236,6 +236,62 @@ export default function Asignados() {
     loadData()
   }
 
+  // ── EDICIÓN INLINE ───────────────────────────────────────
+  function startEdit(rowId, field, value, leadId) {
+    setEditing({ id: rowId, field, value: value || '', leadId })
+  }
+
+  async function saveEdit() {
+    if (!editing) return
+    setSaving(true)
+    const { id, field, value, leadId } = editing
+
+    if (field === 'metodo_match') {
+      await supabase.from('mkt_ventas').update({ metodo_match: value || null }).eq('id', id)
+    } else if (field === 'canal' && leadId) {
+      await supabase.from('mkt_leads').update({ canal: value || null }).eq('id', leadId)
+    } else if (field === 'codigo_campana' && leadId) {
+      await supabase.from('mkt_leads').update({ codigo_campana: value || null }).eq('id', leadId)
+    }
+
+    setEditing(null)
+    setSaving(false)
+    loadData()
+  }
+
+  function cancelEdit() { setEditing(null) }
+
+  function EditCell({ rowId, field, value, leadId, display }) {
+    const isMe = editing?.id === rowId && editing?.field === field
+    if (isMe) return (
+      <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
+        <input
+          autoFocus
+          className="input-dark text-xs"
+          style={{ width: 100, padding: '2px 6px', height: 24 }}
+          value={editing.value}
+          onChange={e => setEditing(prev => ({ ...prev, value: e.target.value }))}
+          onKeyDown={e => { if (e.key === 'Enter') saveEdit(); if (e.key === 'Escape') cancelEdit() }}
+        />
+        <button onClick={saveEdit} disabled={saving}
+          className="text-xs px-1.5 py-0.5 rounded font-bold"
+          style={{ background: '#1a2e00', color: '#B5E000', border: '1px solid #B5E000' }}>
+          {saving ? '...' : '✓'}
+        </button>
+        <button onClick={cancelEdit} className="text-xs text-gray-600 hover:text-gray-300">✕</button>
+      </div>
+    )
+    return (
+      <div
+        className="cursor-pointer group flex items-center gap-1"
+        title="Clic para editar"
+        onClick={() => startEdit(rowId, field, value, leadId)}>
+        {display}
+        <span className="opacity-0 group-hover:opacity-40 text-xs">✏</span>
+      </div>
+    )
+  }
+
   const sf = (k, v) => { setFilters(p => ({ ...p, [k]: v })); setPage(0) }
   const pct = stats?.totalV > 0 ? Math.round((stats.digital / stats.totalV) * 100) : 0
 
@@ -421,14 +477,30 @@ export default function Asignados() {
                     <td className="text-gray-400">{v.vendedor || '—'}</td>
                     <td>{v.marca ? <span className="badge badge-gray">{v.marca}</span> : '—'}</td>
                     {tab === 'digital' && <>
-                      <td>{lead?.canal ? <span className="badge badge-blue">{lead.canal}</span> : '—'}</td>
-                      <td>{lead?.codigo_campana ? <span className="badge badge-green">[{lead.codigo_campana}]</span> : '—'}</td>
                       <td>
-                        {v.metodo_match
-                          ? <span className={'badge ' + (v.metodo_match==='dni' ? 'badge-green' : v.metodo_match==='email' ? 'badge-blue' : 'badge-yellow')}>
-                              {v.metodo_match}
-                            </span>
-                          : '—'}
+                        <EditCell
+                          rowId={v.id} field="canal"
+                          value={lead?.canal} leadId={v.lead_id}
+                          display={lead?.canal ? <span className="badge badge-blue">{lead.canal}</span> : <span className="text-gray-600 text-xs">— editar</span>}
+                        />
+                      </td>
+                      <td>
+                        <EditCell
+                          rowId={v.id} field="codigo_campana"
+                          value={lead?.codigo_campana} leadId={v.lead_id}
+                          display={lead?.codigo_campana ? <span className="badge badge-green">[{lead.codigo_campana}]</span> : <span className="text-gray-600 text-xs">— editar</span>}
+                        />
+                      </td>
+                      <td>
+                        <EditCell
+                          rowId={v.id} field="metodo_match"
+                          value={v.metodo_match} leadId={v.lead_id}
+                          display={v.metodo_match
+                            ? <span className={'badge ' + (v.metodo_match==='dni'?'badge-green':v.metodo_match==='proceso'?'badge-green':v.metodo_match==='manual'?'badge-blue':'badge-yellow')}>
+                                {v.metodo_match}
+                              </span>
+                            : <span className="text-gray-600 text-xs">— editar</span>}
+                        />
                       </td>
                     </>}
                     {tab === 'otros' && (
