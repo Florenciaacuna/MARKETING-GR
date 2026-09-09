@@ -63,34 +63,49 @@ export default function Dashboard() {
       setStats({ totalVentas, ventasConLead, totalLeads, leadsConDNI, leadsConTel })
 
       // Orígenes de las ventas matcheadas (del lead)
-      const { data: ventasData } = await supabase.from('mkt_ventas')
-        .select('metodo_match, mkt_leads!mkt_ventas_lead_id_fkey(origen, canal, fuente)')
-        .not('lead_id','is',null)
-        .limit(5000)
+      // Origen de TODAS las ventas (con y sin lead)
+      const { data: todasVentas } = await supabase.from('mkt_ventas')
+        .select('metodo_match, lead_origen, marca')
+        .limit(10000)
 
-      if (ventasData) {
-        // Por origen del lead
+      if (todasVentas) {
         const origenMap = {}
         const metodosMap = {}
-        const canalMap = {}
 
-        ventasData.forEach(v => {
-          const lead = v.mkt_leads
-          const origen = lead?.origen || 'Sin origen'
-          const metodo = v.metodo_match || 'sin_método'
-          const canal  = lead?.canal || 'Sin canal'
+        todasVentas.forEach(v => {
+          // Origen: si tiene lead_origen lo usa; si no tiene lead es "Sin lead digital"
+          const origen = v.lead_id === undefined
+            ? (v.lead_origen || 'Sin lead digital')
+            : (v.lead_origen || 'Sin lead digital')
+          origenMap[origen] = (origenMap[origen] || 0) + 1
 
-          origenMap[origen]  = (origenMap[origen]  || 0) + 1
-          metodosMap[metodo] = (metodosMap[metodo] || 0) + 1
-          canalMap[canal]    = (canalMap[canal]    || 0) + 1
+          if (v.metodo_match) {
+            metodosMap[v.metodo_match] = (metodosMap[v.metodo_match] || 0) + 1
+          }
         })
 
         const sortDesc = obj => Object.entries(obj)
           .sort((a,b) => b[1]-a[1])
           .map(([name,value]) => ({ name, value }))
 
-        setOrigenes(sortDesc(origenMap).slice(0, 10))
+        setOrigenes(sortDesc(origenMap))
         setMetodos(sortDesc(metodosMap))
+      }
+
+      // Canales solo de ventas con lead Internet/Llamadas (no De paso)
+      const { data: ventasDigital } = await supabase.from('mkt_ventas')
+        .select('mkt_leads!mkt_ventas_lead_id_fkey(canal)')
+        .not('lead_id','is',null)
+        .or('lead_origen.is.null,lead_origen.neq.De paso')
+        .limit(5000)
+
+      if (ventasDigital) {
+        const canalMap = {}
+        ventasDigital.forEach(v => {
+          const canal = v.mkt_leads?.canal || 'Sin canal'
+          canalMap[canal] = (canalMap[canal] || 0) + 1
+        })
+        const sortDesc = obj => Object.entries(obj).sort((a,b)=>b[1]-a[1]).map(([name,value])=>({name,value}))
         setCanales(sortDesc(canalMap).slice(0, 8))
       }
 
