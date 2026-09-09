@@ -157,7 +157,25 @@ export default function Login({ onLogin }) {
         <div className="text-center mt-5 text-gray-600 text-xs">
           ¿No tenés acceso? Contactá al administrador.
         </div>
-      </div>
+      
+
+        {/* QR acceso invitado */}
+        <div className="mt-6 p-4 rounded-xl text-center" style={{ background:'#111', border:'1px solid #2a2a2a' }}>
+          <p className="text-xs mb-3" style={{ color:'#6b7280' }}>Acceso de solo lectura para invitados (móvil)</p>
+          <div className="flex justify-center mb-3">
+            <img
+              src={`https://api.qrserver.com/v1/create-qr-code/?size=140x140&data=${encodeURIComponent(window.location.origin+'?guest=1')}&bgcolor=111111&color=B5E000&margin=10`}
+              alt="QR invitado"
+              className="rounded-xl"
+              style={{ border:'2px solid #2a2a2a' }}
+            />
+          </div>
+          <p className="text-xs" style={{ color:'#4b5563' }}>Escaneá para ver Dashboard y Asignados</p>
+          <a href="?guest=1" className="inline-block mt-2 text-xs px-3 py-1 rounded-lg"
+            style={{ background:'#1a1a1a', color:'#6b7280', border:'1px solid #2a2a2a' }}>
+            Entrar como invitado →
+          </a>
+        </div></div>
     </div>
   )
 }
