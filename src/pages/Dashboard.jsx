@@ -1,141 +1,268 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
-import { BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
+import {
+  BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
+  PieChart, Pie, Cell, Legend
+} from 'recharts'
 
-const BRAND  = '#B5E000'
-const COLORS = [BRAND, '#3b82f6', '#f59e0b', '#ec4899', '#8b5cf6', '#06b6d4']
+const BRAND   = '#B5E000'
+const COLORS  = ['#B5E000','#60a5fa','#f59e0b','#f87171','#a78bfa','#34d399','#fb923c','#e879f9']
 
-const fmt  = n => n == null ? '—' : new Intl.NumberFormat('es-AR', { style:'currency', currency:'ARS', maximumFractionDigits:0 }).format(n)
-const fmtN = n => (n||0).toLocaleString('es-AR')
+const fmtNum  = n => (n||0).toLocaleString('es-AR')
+const fmtPct  = (a,b) => b > 0 ? Math.round(a/b*100) + '%' : '0%'
 
-function KPI({ label, value, sub, highlight }) {
+function KpiCard({ label, value, sub, accent }) {
   return (
-    <div className="rounded-xl p-5 border" style={highlight
-      ? { background: BRAND, borderColor: BRAND }
-      : { background: '#1a1a1a', borderColor: '#2a2a2a' }}>
-      <div className={`text-3xl font-black leading-none mb-1 ${highlight ? 'text-black' : 'text-white'}`}>{value}</div>
-      <div className={`text-xs font-bold uppercase tracking-wide ${highlight ? 'text-black/70' : 'text-gray-500'}`}>{label}</div>
-      {sub && <div className={`text-xs mt-1 ${highlight ? 'text-black/60' : 'text-gray-600'}`}>{sub}</div>}
+    <div className="rounded-xl p-4 border" style={{ background: accent ? '#1a2e00' : '#111', borderColor: accent ? BRAND : '#2a2a2a' }}>
+      <div className="text-2xl font-black" style={{ color: accent ? BRAND : '#fff' }}>{value}</div>
+      <div className="text-xs font-bold uppercase mt-1" style={{ color: accent ? BRAND : '#6b7280' }}>{label}</div>
+      {sub && <div className="text-xs text-gray-600 mt-0.5">{sub}</div>}
     </div>
   )
 }
 
-const customTooltip = ({ active, payload, label }) => {
+const CustomTooltip = ({ active, payload, label }) => {
   if (!active || !payload?.length) return null
   return (
-    <div className="rounded-lg px-3 py-2 text-xs border" style={{ background: '#1a1a1a', borderColor: '#2a2a2a', color: '#d1d5db' }}>
+    <div className="rounded-lg px-3 py-2 text-xs" style={{ background:'#1a1a1a', border:'1px solid #2a2a2a' }}>
       <div className="font-bold text-white mb-1">{label}</div>
-      {payload.map((p,i) => <div key={i} style={{color:p.color}}>{p.name}: {p.value}</div>)}
+      {payload.map((p,i) => (
+        <div key={i} style={{ color: p.fill || p.color }}>{p.name}: {fmtNum(p.value)}</div>
+      ))}
     </div>
   )
 }
 
 export default function Dashboard() {
-  const [stats, setStats]             = useState(null)
-  const [byCanal, setByCanal]         = useState([])
-  const [byMarca, setByMarca]         = useState([])
-  const [topAsesores, setTopAsesores] = useState([])
-  const [loading, setLoading]         = useState(true)
+  const [stats,    setStats]    = useState(null)
+  const [origenes, setOrigenes] = useState([])
+  const [metodos,  setMetodos]  = useState([])
+  const [canales,  setCanales]  = useState([])
+  const [marcas,   setMarcas]   = useState([])
+  const [loading,  setLoading]  = useState(true)
 
   useEffect(() => {
     async function load() {
+      setLoading(true)
+
+      // KPIs globales
       const [
-        { count: totalLeads  },
         { count: totalVentas },
-        { count: digital     },
-        { data: campPerf     },
-        { data: porCanal     },
-        { data: porMarca     },
-        { data: asesores     },
+        { count: ventasConLead },
+        { count: totalLeads },
+        { count: leadsConDNI },
+        { count: leadsConTel },
       ] = await Promise.all([
-        supabase.from('mkt_leads').select('*', { count:'exact', head:true }),
         supabase.from('mkt_ventas').select('*', { count:'exact', head:true }),
         supabase.from('mkt_ventas').select('*', { count:'exact', head:true }).not('lead_id','is',null),
-        supabase.from('mkt_campanas_performance').select('gasto_total,ingreso_total,total_ventas'),
-        supabase.from('mkt_leads').select('canal').not('canal','is',null).limit(2000),
-        supabase.from('mkt_ventas').select('marca').not('marca','is',null).limit(2000),
-        supabase.from('mkt_ventas').select('vendedor').not('vendedor','is',null).limit(2000),
+        supabase.from('mkt_leads').select('*', { count:'exact', head:true }),
+        supabase.from('mkt_leads').select('*', { count:'exact', head:true }).not('dni','is',null),
+        supabase.from('mkt_leads').select('*', { count:'exact', head:true }).not('telefono','is',null),
       ])
-      const totalGasto   = (campPerf||[]).reduce((s,c)=>s+(c.gasto_total||0),0)
-      const totalIngreso = (campPerf||[]).reduce((s,c)=>s+(c.ingreso_total||0),0)
-      setStats({ totalLeads, totalVentas, digital: digital||0, totalGasto, totalIngreso })
 
-      const cc = {}; (porCanal||[]).forEach(r=>{ const c=r.canal||'Otro'; cc[c]=(cc[c]||0)+1 })
-      setByCanal(Object.entries(cc).sort((a,b)=>b[1]-a[1]).slice(0,6).map(([name,value])=>({name,value})))
+      setStats({ totalVentas, ventasConLead, totalLeads, leadsConDNI, leadsConTel })
 
-      const mc = {}; (porMarca||[]).forEach(r=>{ const m=r.marca||'Sin marca'; mc[m]=(mc[m]||0)+1 })
-      setByMarca(Object.entries(mc).sort((a,b)=>b[1]-a[1]).slice(0,5).map(([marca,ventas])=>({marca,ventas})))
+      // Orígenes de las ventas matcheadas (del lead)
+      const { data: ventasData } = await supabase.from('mkt_ventas')
+        .select('metodo_match, mkt_leads!mkt_ventas_lead_id_fkey(origen, canal, fuente)')
+        .not('lead_id','is',null)
+        .limit(5000)
 
-      const ac = {}; (asesores||[]).forEach(r=>{ if(r.vendedor) ac[r.vendedor]=(ac[r.vendedor]||0)+1 })
-      setTopAsesores(Object.entries(ac).sort((a,b)=>b[1]-a[1]).slice(0,8).map(([vendedor,ventas])=>({vendedor,ventas})))
+      if (ventasData) {
+        // Por origen del lead
+        const origenMap = {}
+        const metodosMap = {}
+        const canalMap = {}
+
+        ventasData.forEach(v => {
+          const lead = v.mkt_leads
+          const origen = lead?.origen || 'Sin origen'
+          const metodo = v.metodo_match || 'sin_método'
+          const canal  = lead?.canal || 'Sin canal'
+
+          origenMap[origen]  = (origenMap[origen]  || 0) + 1
+          metodosMap[metodo] = (metodosMap[metodo] || 0) + 1
+          canalMap[canal]    = (canalMap[canal]    || 0) + 1
+        })
+
+        const sortDesc = obj => Object.entries(obj)
+          .sort((a,b) => b[1]-a[1])
+          .map(([name,value]) => ({ name, value }))
+
+        setOrigenes(sortDesc(origenMap).slice(0, 10))
+        setMetodos(sortDesc(metodosMap))
+        setCanales(sortDesc(canalMap).slice(0, 8))
+      }
+
+      // Ventas por marca
+      const { data: marcaData } = await supabase.from('mkt_ventas')
+        .select('marca').not('marca','is',null)
+      if (marcaData) {
+        const map = {}
+        marcaData.forEach(v => { const m = v.marca || 'Otros'; map[m] = (map[m]||0)+1 })
+        setMarcas(Object.entries(map).sort((a,b)=>b[1]-a[1]).map(([name,value])=>({ name, value })))
+      }
+
       setLoading(false)
     }
     load()
   }, [])
 
   if (loading) return (
-    <div className="flex items-center justify-center h-64 text-gray-600 text-sm">Cargando dashboard...</div>
+    <div className="flex items-center justify-center h-64">
+      <div className="text-gray-500 text-sm">Cargando dashboard...</div>
+    </div>
   )
 
-  const pct = stats?.totalVentas > 0 ? Math.round((stats.digital/stats.totalVentas)*100) : 0
-  const roi = stats?.totalGasto > 0 && stats?.totalIngreso > 0
-    ? Math.round(((stats.totalIngreso-stats.totalGasto)/stats.totalGasto)*100) : null
+  const sinMatch = (stats?.totalVentas||0) - (stats?.ventasConLead||0)
+  const pctMatch = fmtPct(stats?.ventasConLead, stats?.totalVentas)
 
   return (
-    <div className="space-y-5">
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <KPI label="Total leads"     value={fmtN(stats?.totalLeads)}  sub="Histórico acumulado" />
-        <KPI label="Total ventas"    value={fmtN(stats?.totalVentas)} sub="K1 + Autodealer" />
-        <KPI label="Origen digital"  value={`${pct}%`}                sub={`${fmtN(stats?.digital)} ventas`} highlight={pct > 0} />
-        <KPI label="ROI global"      value={roi != null ? `${roi>=0?'+':''}${roi}%` : '—'} sub="Ingreso vs. gasto" />
-      </div>
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <KPI label="Gasto campañas"  value={fmt(stats?.totalGasto)}   sub="Inversión registrada" />
-        <KPI label="Ingreso atribuido" value={fmt(stats?.totalIngreso)} />
-        <KPI label="CAC promedio"    value={stats?.digital > 0 ? fmt(Math.round((stats.totalGasto||0)/stats.digital)) : '—'} />
-        <KPI label="Sin atribución"  value={fmtN((stats?.totalVentas||0)-(stats?.digital||0))} sub={`${100-pct}% del total`} />
+    <div className="space-y-6">
+
+      {/* KPIs PRINCIPALES */}
+      <div>
+        <div className="section-header">
+          <h2>Resumen general</h2>
+        </div>
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+          <KpiCard label="Total ventas" value={fmtNum(stats?.totalVentas)} />
+          <KpiCard label="Ventas con lead" value={fmtNum(stats?.ventasConLead)} sub={pctMatch + ' del total'} accent />
+          <KpiCard label="Sin lead digital" value={fmtNum(sinMatch)} sub="Otro canal de origen" />
+          <KpiCard label="Total leads" value={fmtNum(stats?.totalLeads)} sub={fmtNum(stats?.leadsConTel) + ' con teléfono'} />
+        </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-        <div className="rounded-xl p-5 border" style={{ background:'#1a1a1a', borderColor:'#2a2a2a' }}>
-          <h3 className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-4">Leads por canal</h3>
-          <ResponsiveContainer width="100%" height={200}>
-            <PieChart>
-              <Pie data={byCanal} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={80}
-                label={({name, percent}) => `${name} ${(percent*100).toFixed(0)}%`} labelLine={false}>
-                {byCanal.map((_,i)=><Cell key={i} fill={COLORS[i%COLORS.length]}/>)}
-              </Pie>
-              <Tooltip content={customTooltip}/>
-            </PieChart>
-          </ResponsiveContainer>
+      {/* MÉTODOS DE MATCH + ORÍGENES */}
+      <div className="grid grid-cols-2 gap-4">
+
+        {/* Métodos de match */}
+        <div className="card">
+          <div className="section-header">
+            <h2>Cómo se vincularon las ventas</h2>
+            <span className="count-badge">{fmtNum(stats?.ventasConLead)} matcheadas</span>
+          </div>
+          <div className="space-y-2">
+            {metodos.map((m, i) => {
+              const pct = stats?.ventasConLead > 0 ? Math.round(m.value/stats.ventasConLead*100) : 0
+              const colors = { proceso:'#B5E000', dni:'#B5E000', telefono:'#60a5fa', tel_parcial:'#f59e0b', manual:'#a78bfa' }
+              const color = colors[m.name] || '#6b7280'
+              return (
+                <div key={m.name}>
+                  <div className="flex justify-between text-xs mb-1">
+                    <span className="font-mono" style={{ color }}>{m.name}</span>
+                    <span className="text-gray-400">{fmtNum(m.value)} <span className="text-gray-600">({pct}%)</span></span>
+                  </div>
+                  <div className="h-1.5 rounded-full" style={{ background:'#1f1f1f' }}>
+                    <div className="h-1.5 rounded-full" style={{ width: pct+'%', background: color }}/>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
         </div>
 
-        <div className="rounded-xl p-5 border" style={{ background:'#1a1a1a', borderColor:'#2a2a2a' }}>
-          <h3 className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-4">Ventas por marca</h3>
-          <ResponsiveContainer width="100%" height={200}>
-            <BarChart data={byMarca} layout="vertical" margin={{ left:10, right:20 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#2a2a2a"/>
-              <XAxis type="number" tick={{ fontSize:11, fill:'#4b5563' }}/>
-              <YAxis dataKey="marca" type="category" tick={{ fontSize:12, fill:'#9ca3af' }} width={65}/>
-              <Tooltip content={customTooltip}/>
-              <Bar dataKey="ventas" fill={BRAND} radius={[0,6,6,0]}/>
+        {/* Orígenes */}
+        <div className="card">
+          <div className="section-header">
+            <h2>Origen de los leads vinculados</h2>
+          </div>
+          <div className="space-y-2">
+            {origenes.map((o, i) => {
+              const max = origenes[0]?.value || 1
+              const pct = Math.round(o.value/max*100)
+              return (
+                <div key={o.name}>
+                  <div className="flex justify-between text-xs mb-1">
+                    <span className="text-gray-300 truncate max-w-[180px]" title={o.name}>{o.name}</span>
+                    <span className="text-gray-400 ml-2 flex-shrink-0">{fmtNum(o.value)}</span>
+                  </div>
+                  <div className="h-1.5 rounded-full" style={{ background:'#1f1f1f' }}>
+                    <div className="h-1.5 rounded-full" style={{ width: pct+'%', background: COLORS[i % COLORS.length] }}/>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      </div>
+
+      {/* CANAL Y MARCA */}
+      <div className="grid grid-cols-2 gap-4">
+
+        {/* Canal del lead */}
+        <div className="card">
+          <div className="section-header">
+            <h2>Canal de captación</h2>
+            <span className="count-badge">Top 8</span>
+          </div>
+          <ResponsiveContainer width="100%" height={220}>
+            <BarChart data={canales} layout="vertical" margin={{ left: 8, right: 8 }}>
+              <XAxis type="number" hide />
+              <YAxis type="category" dataKey="name" width={130} tick={{ fill:'#9ca3af', fontSize:10 }} />
+              <Tooltip content={<CustomTooltip />} cursor={{ fill:'#ffffff08' }} />
+              <Bar dataKey="value" name="Ventas" radius={[0,4,4,0]}>
+                {canales.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
+              </Bar>
             </BarChart>
           </ResponsiveContainer>
         </div>
+
+        {/* Ventas por marca */}
+        <div className="card">
+          <div className="section-header">
+            <h2>Ventas por marca</h2>
+          </div>
+          <ResponsiveContainer width="100%" height={220}>
+            <PieChart>
+              <Pie data={marcas} cx="50%" cy="50%" outerRadius={80}
+                dataKey="value" nameKey="name" label={({ name, percent }) => `${name} ${(percent*100).toFixed(0)}%`}
+                labelLine={false} fontSize={10}>
+                {marcas.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
+              </Pie>
+              <Tooltip content={<CustomTooltip />} />
+            </PieChart>
+          </ResponsiveContainer>
+        </div>
       </div>
 
-      <div className="rounded-xl p-5 border" style={{ background:'#1a1a1a', borderColor:'#2a2a2a' }}>
-        <h3 className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-4">Top asesores por ventas</h3>
-        <ResponsiveContainer width="100%" height={180}>
-          <BarChart data={topAsesores} margin={{ left:0, right:20 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#2a2a2a"/>
-            <XAxis dataKey="vendedor" tick={{ fontSize:10, fill:'#4b5563' }}/>
-            <YAxis tick={{ fontSize:11, fill:'#4b5563' }}/>
-            <Tooltip content={customTooltip}/>
-            <Bar dataKey="ventas" fill="#3b82f6" radius={[6,6,0,0]}/>
-          </BarChart>
-        </ResponsiveContainer>
+      {/* DETALLE DE ORÍGENES */}
+      <div className="card">
+        <div className="section-header">
+          <h2>Detalle de ventas matcheadas por origen</h2>
+          <span className="count-badge">{fmtNum(stats?.ventasConLead)} ventas con lead</span>
+        </div>
+        <div className="overflow-x-auto rounded-lg border" style={{ borderColor:'#2a2a2a' }}>
+          <table className="dark-table">
+            <thead><tr>
+              <th>Origen del lead</th>
+              <th>Ventas vinculadas</th>
+              <th>% del total matcheado</th>
+              <th>Representación</th>
+            </tr></thead>
+            <tbody>
+              {origenes.map((o, i) => {
+                const pct = stats?.ventasConLead > 0 ? (o.value/stats.ventasConLead*100).toFixed(1) : 0
+                return (
+                  <tr key={o.name}>
+                    <td>
+                      <span className="font-medium text-white">{o.name}</span>
+                    </td>
+                    <td className="font-bold" style={{ color: BRAND }}>{fmtNum(o.value)}</td>
+                    <td className="text-gray-400">{pct}%</td>
+                    <td style={{ width: 180 }}>
+                      <div className="h-1.5 rounded-full" style={{ background:'#1f1f1f' }}>
+                        <div className="h-1.5 rounded-full" style={{ width: pct+'%', background: COLORS[i%COLORS.length] }}/>
+                      </div>
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
       </div>
+
     </div>
   )
 }
