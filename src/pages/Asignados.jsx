@@ -29,7 +29,7 @@ export default function Asignados() {
   const [running,       setRunning]       = useState(false)
   const [runLog,        setRunLog]        = useState([])
   const [page,          setPage]          = useState(0)
-  const [filters,       setFilters]       = useState({ search: '', tipo: '', campana_codigo: '', mes: '', origen: '' })
+  const [filters,       setFilters]       = useState({ search: '', tipo: '', campana_codigo: '', mes: '', origen: '', entrega: '' })
   const [meses,         setMeses]         = useState([])
   const [codigosCampana,setCodigosCampana]= useState([])
   const [campanas,      setCampanas]      = useState([])
@@ -66,7 +66,7 @@ export default function Asignados() {
       ? q.gte('fecha', filters.mes + '-01').lte('fecha', filters.mes + '-31')
       : q
     const [r1, r2, r3, r4] = await Promise.all([
-      applyMes(supabase.from('mkt_ventas').select('*', { count: 'exact', head: true })).not('lead_id','is',null).or('lead_origen.is.null,lead_origen.neq.De paso'),
+      applyMes(supabase.from('mkt_ventas').select('*', { count: 'exact', head: true })).not('lead_id','is',null).not('lead_origen','eq','De paso'),
       applyMes(supabase.from('mkt_ventas').select('*', { count: 'exact', head: true })).is('lead_id', null),
       applyMes(supabase.from('mkt_ventas').select('*', { count: 'exact', head: true })),
       supabase.from('mkt_leads').select('*', { count: 'exact', head: true }),
@@ -86,14 +86,13 @@ export default function Asignados() {
       .select(`id,pv_solicitud,fecha,tipo,nombre,dni,telefono_personal,celular_personal,
                vendedor,marca,fuente,metodo_match,lead_id,campana_id,proceso,lead_origen,
                mkt_campanas!mkt_ventas_campana_id_fkey(id,nombre),
-               mkt_leads!mkt_ventas_lead_id_fkey(id,nro_tramite,canal,codigo_campana,origen,fecha_consulta)`,
+               mkt_leads!mkt_ventas_lead_id_fkey(id,nro_tramite,canal,codigo_campana,origen,fecha_consulta),
+               mkt_entregas!mkt_entregas_venta_id_fkey(id,fecha_entrega,salon,sistema)`,
         { count: 'exact' })
       .order('fecha', { ascending: false })
       .range(page * PAGE, (page + 1) * PAGE - 1)
-    if (tab === 'digital') {
-      q = q.not('lead_id', 'is', null)
-      q = q.or('lead_origen.is.null,lead_origen.neq.De paso')  // excluir De paso del tab digital
-    } else q = q.is('lead_id', null)
+    if (tab === 'digital') q = q.not('lead_id', 'is', null)
+    else q = q.is('lead_id', null)
     if (filters.tipo)    q = q.ilike('tipo', '%' + filters.tipo + '%')
     if (filters.mes)     q = q.gte('fecha', filters.mes + '-01').lte('fecha', filters.mes + '-31')
     if (filters.search)  q = q.or('nombre.ilike.%' + filters.search + '%,dni.eq.' + filters.search + ',pv_solicitud.ilike.%' + filters.search + '%')
@@ -323,7 +322,13 @@ export default function Asignados() {
             {origenes.map(o => <option key={o} value={o}>{o}</option>)}
           </select>
           <div className="filter-sep"/>
-          <button onClick={() => { setFilters({ search:'', tipo:'', campana_codigo:'', mes:'', origen:'' }); setPage(0) }}
+          <select className="input-dark" style={{ width: 150 }} value={filters.entrega} onChange={e => sf('entrega', e.target.value)}>
+            <option value="">Entrega: todas</option>
+            <option value="con">Con entrega</option>
+            <option value="sin">Sin entrega</option>
+          </select>
+          <div className="filter-sep"/>
+          <button onClick={() => { setFilters({ search:'', tipo:'', campana_codigo:'', mes:'', origen:'', entrega:'' }); setPage(0) }}
             className="btn-ghost text-xs flex-shrink-0">Limpiar filtros</button>
         </div>
 
@@ -339,7 +344,7 @@ export default function Asignados() {
             <thead><tr>
               <th>PV/Solicitud</th><th>Fecha</th><th>Tipo</th><th>Cliente</th>
               <th>DNI</th><th>Vendedor</th><th>Marca</th>
-              {tab === 'digital' && <><th>Origen</th><th>Canal lead</th><th>Cód. campaña</th><th>Campaña vinculada</th><th>Match</th></>}
+              {tab === 'digital' && <><th>Origen</th><th>Canal lead</th><th>Cód. campaña</th><th>Campaña vinculada</th><th>Match</th><th>Fecha entrega</th><th>Salón entrega</th></>}
               {tab === 'otros' && <th>Estado</th>}
             </tr></thead>
             <tbody>
@@ -350,8 +355,11 @@ export default function Asignados() {
                 </td></tr>
               )}
               {data.filter(v => {
-                if (!filters.origen) return true
-                return v.mkt_leads?.origen === filters.origen
+                if (tab === 'digital' && v.lead_origen === 'De paso') return false
+                if (filters.origen) return (v.mkt_leads?.origen || v.lead_origen || '') === filters.origen
+                if (filters.entrega === 'con') return !!v.mkt_entregas
+                if (filters.entrega === 'sin') return !v.mkt_entregas
+                return true
               }).map(v => {
                 const lead = v.mkt_leads
                 return (
@@ -456,6 +464,16 @@ export default function Asignados() {
                             <span className="opacity-0 group-hover:opacity-50 text-xs ml-1">✏</span>
                           </div>
                         )}
+                      </td>
+
+                      {/* ENTREGA */}
+                      <td className="text-xs whitespace-nowrap">
+                        {v.mkt_entregas
+                          ? <span style={{ color: BRAND }}>{String(v.mkt_entregas.fecha_entrega || '').slice(0,10).split('-').reverse().join('/')}</span>
+                          : <span className="text-gray-600">—</span>}
+                      </td>
+                      <td className="text-xs text-gray-400">
+                        {v.mkt_entregas?.salon || '—'}
                       </td>
                     </>}
 
