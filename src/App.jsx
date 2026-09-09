@@ -6,6 +6,7 @@ import Dashboard     from './pages/Dashboard'
 import Leads         from './pages/Leads'
 import Ventas        from './pages/Ventas'
 import Asignados     from './pages/Asignados'
+import Entregas from './pages/Entregas'
 import Campanas      from './pages/Campanas'
 
 const BRAND = '#B5E000'
@@ -15,7 +16,6 @@ const NAV = [
   { id: 'dashboard', label: 'Dashboard', icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg> },
   { id: 'leads',     label: 'Leads',     icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg> },
   { id: 'ventas',    label: 'Ventas',    icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg> },
-  { id: 'entregas',  label: 'Entregas',  icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4"><path d="M5 17H3a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l4 4v8a2 2 0 0 1-2 2h-2"/><circle cx="7" cy="17" r="2"/><path d="M9 17h6"/><circle cx="17" cy="17" r="2"/></svg> },
   { id: 'asignados', label: 'Asignados', icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg> },
   { id: 'campanas',  label: 'Campañas',  icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg> },
 ]
@@ -41,6 +41,10 @@ export default function App() {
 
   const username = session.user.email?.split('@')[0] || 'Usuario'
   const initial  = (session.user.email?.[0] || 'U').toUpperCase()
+
+  const visibleTabs = isGuest
+    ? NAV.filter(t => ['dashboard','asignados'].includes(t.id))
+    : NAV
 
   return (
     <div className="flex h-screen overflow-hidden" style={{ background: '#0f0f0f' }}>
