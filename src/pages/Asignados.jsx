@@ -29,10 +29,11 @@ export default function Asignados() {
   const [running,       setRunning]       = useState(false)
   const [runLog,        setRunLog]        = useState([])
   const [page,          setPage]          = useState(0)
-  const [filters,       setFilters]       = useState({ search: '', tipo: '', campana_codigo: '', mes: '' })
+  const [filters,       setFilters]       = useState({ search: '', tipo: '', campana_codigo: '', mes: '', origen: '' })
   const [meses,         setMeses]         = useState([])
   const [codigosCampana,setCodigosCampana]= useState([])
   const [campanas,      setCampanas]      = useState([])
+  const [origenes,      setOrigenes]      = useState([])
   // Edición inline
   const [editing,  setEditing]  = useState(null)  // { id, field, value, leadId }
   const [saving,   setSaving]   = useState(false)
@@ -52,6 +53,12 @@ export default function Asignados() {
       })
     supabase.from('mkt_campanas').select('id,nombre').order('nombre')
       .then(({ data }) => setCampanas(data || []))
+    supabase.from('mkt_leads').select('origen').not('origen','is',null)
+      .then(({ data }) => {
+        if (!data) return
+        const u = [...new Set(data.map(r => r.origen).filter(Boolean))].sort()
+        setOrigenes(u)
+      })
   }, [])
 
   const loadStats = useCallback(async () => {
@@ -88,6 +95,8 @@ export default function Asignados() {
     if (filters.tipo)    q = q.ilike('tipo', '%' + filters.tipo + '%')
     if (filters.mes)     q = q.gte('fecha', filters.mes + '-01').lte('fecha', filters.mes + '-31')
     if (filters.search)  q = q.or('nombre.ilike.%' + filters.search + '%,dni.eq.' + filters.search + ',pv_solicitud.ilike.%' + filters.search + '%')
+    // Filtro por origen: filtra por lead_id donde el lead tiene ese origen
+    // Se aplica client-side después de cargar (origen viene del join)
     if (leadIdsFiltro !== null) {
       if (leadIdsFiltro.length > 0) q = q.in('lead_id', leadIdsFiltro)
       else q = q.eq('id', '00000000-0000-0000-0000-000000000000')
@@ -307,8 +316,12 @@ export default function Asignados() {
             <option>USADO</option>
             <option>PLAN AHORRO</option>
           </select>
+          <select className="input-dark" style={{ width: 160 }} value={filters.origen} onChange={e => sf('origen', e.target.value)}>
+            <option value="">Origen: todos</option>
+            {origenes.map(o => <option key={o} value={o}>{o}</option>)}
+          </select>
           <div className="filter-sep"/>
-          <button onClick={() => { setFilters({ search:'', tipo:'', campana_codigo:'', mes:'' }); setPage(0) }}
+          <button onClick={() => { setFilters({ search:'', tipo:'', campana_codigo:'', mes:'', origen:'' }); setPage(0) }}
             className="btn-ghost text-xs flex-shrink-0">Limpiar filtros</button>
         </div>
 
@@ -316,6 +329,7 @@ export default function Asignados() {
           Mostrando <span>{data.length}</span> registros
           {filters.mes && <> · Mes: <span>{new Date(filters.mes+'-15').toLocaleString('es-AR',{month:'long',year:'numeric'})}</span></>}
           {filters.tipo && <> · Tipo: <span>{filters.tipo}</span></>}
+          {filters.origen && <> · Origen: <span>{filters.origen}</span></>}
         </div>
 
         <div className="overflow-x-auto rounded-lg border" style={{ borderColor:'#2a2a2a' }}>
@@ -323,7 +337,7 @@ export default function Asignados() {
             <thead><tr>
               <th>PV/Solicitud</th><th>Fecha</th><th>Tipo</th><th>Cliente</th>
               <th>DNI</th><th>Vendedor</th><th>Marca</th>
-              {tab === 'digital' && <><th>Canal lead</th><th>Cód. campaña</th><th>Campaña vinculada</th><th>Match</th></>}
+              {tab === 'digital' && <><th>Origen</th><th>Canal lead</th><th>Cód. campaña</th><th>Campaña vinculada</th><th>Match</th></>}
               {tab === 'otros' && <th>Estado</th>}
             </tr></thead>
             <tbody>
@@ -333,7 +347,10 @@ export default function Asignados() {
                   {tab === 'digital' ? 'Sin ventas con lead. Ejecutá el cruce primero.' : 'Todas las ventas tienen lead.'}
                 </td></tr>
               )}
-              {data.map(v => {
+              {data.filter(v => {
+                if (!filters.origen) return true
+                return v.mkt_leads?.origen === filters.origen
+              }).map(v => {
                 const lead = v.mkt_leads
                 return (
                   <tr key={v.id}>
@@ -348,6 +365,13 @@ export default function Asignados() {
                     <td>{v.marca ? <span className="badge badge-gray">{v.marca}</span> : '—'}</td>
 
                     {tab === 'digital' && <>
+                      {/* ORIGEN — solo lectura */}
+                      <td>
+                        {lead?.origen
+                          ? <span className="badge badge-gray" style={{ fontSize:'0.65rem' }}>{lead.origen}</span>
+                          : <span className="text-gray-600">—</span>}
+                      </td>
+
                       {/* CANAL — editable */}
                       <td onClick={() => !editing && setEditing({ id: v.id, field: 'canal', value: lead?.canal || '', leadId: lead?.id })}>
                         {editing?.id === v.id && editing?.field === 'canal' ? (
