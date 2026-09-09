@@ -27,6 +27,36 @@ function normEmail(e) {
   return String(e).trim().toLowerCase() || null
 }
 
+// ── Componente de celda editable — FUERA del componente principal ──
+function EditCell({ rowId, field, value, leadId, display, editing, setEditing, onSave, onCancel, saving }) {
+  const isMe = editing?.id === rowId && editing?.field === field
+  if (isMe) return (
+    <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
+      <input
+        autoFocus
+        className="input-dark text-xs"
+        style={{ width: 110, padding: '2px 6px', height: 24 }}
+        value={editing.value}
+        onChange={e => setEditing(prev => ({ ...prev, value: e.target.value }))}
+        onKeyDown={e => { if (e.key === 'Enter') onSave(); if (e.key === 'Escape') onCancel() }}
+      />
+      <button onClick={onSave} disabled={saving}
+        className="text-xs px-1.5 py-0.5 rounded font-bold"
+        style={{ background: '#1a2e00', color: '#B5E000', border: '1px solid #B5E000' }}>
+        {saving ? '...' : '✓'}
+      </button>
+      <button onClick={onCancel} className="text-xs text-gray-600 hover:text-gray-300">✕</button>
+    </div>
+  )
+  return (
+    <div className="cursor-pointer group flex items-center gap-1" title="Clic para editar"
+      onClick={() => setEditing({ id: rowId, field, value: value || '', leadId })}>
+      {display}
+      <span className="opacity-0 group-hover:opacity-40 text-xs">✏</span>
+    </div>
+  )
+}
+
 export default function Asignados() {
   const [tab,      setTab]      = useState('digital')
   const [data,     setData]     = useState([])
@@ -237,10 +267,6 @@ export default function Asignados() {
   }
 
   // ── EDICIÓN INLINE ───────────────────────────────────────
-  function startEdit(rowId, field, value, leadId) {
-    setEditing({ id: rowId, field, value: value || '', leadId })
-  }
-
   async function saveEdit() {
     if (!editing) return
     setSaving(true)
@@ -260,37 +286,6 @@ export default function Asignados() {
   }
 
   function cancelEdit() { setEditing(null) }
-
-  function EditCell({ rowId, field, value, leadId, display }) {
-    const isMe = editing?.id === rowId && editing?.field === field
-    if (isMe) return (
-      <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
-        <input
-          autoFocus
-          className="input-dark text-xs"
-          style={{ width: 100, padding: '2px 6px', height: 24 }}
-          value={editing.value}
-          onChange={e => setEditing(prev => ({ ...prev, value: e.target.value }))}
-          onKeyDown={e => { if (e.key === 'Enter') saveEdit(); if (e.key === 'Escape') cancelEdit() }}
-        />
-        <button onClick={saveEdit} disabled={saving}
-          className="text-xs px-1.5 py-0.5 rounded font-bold"
-          style={{ background: '#1a2e00', color: '#B5E000', border: '1px solid #B5E000' }}>
-          {saving ? '...' : '✓'}
-        </button>
-        <button onClick={cancelEdit} className="text-xs text-gray-600 hover:text-gray-300">✕</button>
-      </div>
-    )
-    return (
-      <div
-        className="cursor-pointer group flex items-center gap-1"
-        title="Clic para editar"
-        onClick={() => startEdit(rowId, field, value, leadId)}>
-        {display}
-        <span className="opacity-0 group-hover:opacity-40 text-xs">✏</span>
-      </div>
-    )
-  }
 
   const sf = (k, v) => { setFilters(p => ({ ...p, [k]: v })); setPage(0) }
   const pct = stats?.totalV > 0 ? Math.round((stats.digital / stats.totalV) * 100) : 0
@@ -478,27 +473,22 @@ export default function Asignados() {
                     <td>{v.marca ? <span className="badge badge-gray">{v.marca}</span> : '—'}</td>
                     {tab === 'digital' && <>
                       <td>
-                        <EditCell
-                          rowId={v.id} field="canal"
-                          value={lead?.canal} leadId={v.lead_id}
+                        <EditCell rowId={v.id} field="canal" value={lead?.canal} leadId={v.lead_id}
+                          editing={editing} setEditing={setEditing} onSave={saveEdit} onCancel={cancelEdit} saving={saving}
                           display={lead?.canal ? <span className="badge badge-blue">{lead.canal}</span> : <span className="text-gray-600 text-xs">— editar</span>}
                         />
                       </td>
                       <td>
-                        <EditCell
-                          rowId={v.id} field="codigo_campana"
-                          value={lead?.codigo_campana} leadId={v.lead_id}
+                        <EditCell rowId={v.id} field="codigo_campana" value={lead?.codigo_campana} leadId={v.lead_id}
+                          editing={editing} setEditing={setEditing} onSave={saveEdit} onCancel={cancelEdit} saving={saving}
                           display={lead?.codigo_campana ? <span className="badge badge-green">[{lead.codigo_campana}]</span> : <span className="text-gray-600 text-xs">— editar</span>}
                         />
                       </td>
                       <td>
-                        <EditCell
-                          rowId={v.id} field="metodo_match"
-                          value={v.metodo_match} leadId={v.lead_id}
+                        <EditCell rowId={v.id} field="metodo_match" value={v.metodo_match} leadId={v.lead_id}
+                          editing={editing} setEditing={setEditing} onSave={saveEdit} onCancel={cancelEdit} saving={saving}
                           display={v.metodo_match
-                            ? <span className={'badge ' + (v.metodo_match==='dni'?'badge-green':v.metodo_match==='proceso'?'badge-green':v.metodo_match==='manual'?'badge-blue':'badge-yellow')}>
-                                {v.metodo_match}
-                              </span>
+                            ? <span className={'badge ' + (['dni','proceso'].includes(v.metodo_match)?'badge-green':v.metodo_match==='manual'?'badge-blue':'badge-yellow')}>{v.metodo_match}</span>
                             : <span className="text-gray-600 text-xs">— editar</span>}
                         />
                       </td>
