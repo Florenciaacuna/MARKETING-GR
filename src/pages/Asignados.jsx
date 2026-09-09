@@ -113,7 +113,7 @@ export default function Asignados() {
     let from = 0
     while (true) {
       const { data: batch } = await supabase.from('mkt_leads')
-        .select('id,dni,telefono,celular,email,campana_id,codigo_campana')
+        .select('id,dni,telefono,celular,email,campana_id,codigo_campana,nro_tramite,job_seq')
         .range(from, from + 999)
       if (!batch || batch.length === 0) break
       allLeads = allLeads.concat(batch)
@@ -162,12 +162,12 @@ export default function Asignados() {
         if (p.length >= 8) byPhone8.set(p.slice(-8), lead)
       }
     }
-    // Índice por proceso (Nro Tramite directo del Celer)
-    const byProceso = new Map()
+    // Índice por JOB_SEQ (= campo Proceso en PV Vinculadas)
+    const byJobSeq = new Map()
     for (const lead of allLeads) {
-      if (lead.nro_tramite) byProceso.set(String(lead.nro_tramite), lead)
+      if (lead.job_seq) byJobSeq.set(String(lead.job_seq), lead)
     }
-    log('Índices → DNI: ' + byDNI.size + ' | Teléfonos: ' + byPhone.size + ' | Tel-8díg: ' + byPhone8.size + ' | Proceso: ' + byProceso.size)
+    log('Índices → DNI: ' + byDNI.size + ' | Teléfonos: ' + byPhone.size + ' | Tel-8díg: ' + byPhone8.size + ' | JOB_SEQ: ' + byJobSeq.size)
 
     // 5. Cruzar
     log('Ejecutando cruce Proceso → DNI → Tel exacto → Últimos 8 dígitos...')
@@ -180,9 +180,9 @@ export default function Asignados() {
       const vPhones  = [normPhone(v.telefono_personal), normPhone(v.celular_personal)].filter(Boolean)
       let lead = null, metodo = null
 
-      // 0. Proceso — vínculo directo Celer (más confiable)
-      if (vProceso && byProceso.has(vProceso)) {
-        lead = byProceso.get(vProceso); metodo = 'proceso'; matchProceso++
+      // 0. JOB_SEQ = Proceso — vínculo directo Celer (más confiable)
+      if (vProceso && byJobSeq.has(vProceso)) {
+        lead = byJobSeq.get(vProceso); metodo = 'proceso'; matchProceso++
       }
       // 1. DNI exacto
       if (!lead && vDNI && byDNI.has(vDNI)) {
@@ -213,7 +213,7 @@ export default function Asignados() {
       })
     }
 
-    log(`Matches → Proceso: ${matchProceso} | DNI: ${matchDNI} | Tel exacto: ${matchTel} | Tel 8 díg: ${matchTel8} | Sin match: ${sinMatch}`)
+    log(`Matches → JOB_SEQ: ${matchProceso} | DNI: ${matchDNI} | Tel exacto: ${matchTel} | Tel 8 díg: ${matchTel8} | Sin match: ${sinMatch}`)
 
     // 6. Guardar en lotes de 100
     log('Guardando resultados...')
@@ -298,6 +298,19 @@ export default function Asignados() {
         </div>
       </div>
 
+      {/* Info box */}
+      <div className="info-box success">
+        <span className="info-icon">⚡</span>
+        <div>
+          <strong>¿Cómo funciona el cruce?</strong> El sistema busca coincidencias entre ventas y leads en 4 niveles:
+          <strong> JOB_SEQ</strong> (vínculo directo del Celer) →
+          <strong> DNI</strong> (número de documento) →
+          <strong> Teléfono</strong> (10 dígitos exactos) →
+          <strong> Tel. parcial</strong> (últimos 8 dígitos, cubre variaciones de código de área).
+          Con una sola coincidencia ya se toma como match. Ejecutá el cruce cada vez que cargues datos nuevos.
+        </div>
+      </div>
+
       {/* LOG DEL CRUCE */}
       {runLog.length > 0 && (
         <div className="rounded-xl p-4 font-mono text-xs text-gray-300 overflow-y-auto max-h-48"
@@ -327,10 +340,8 @@ export default function Asignados() {
         </div>
 
         {/* Filtros */}
-        <div className="flex flex-wrap gap-2 mb-4">
-
-          {/* Mes */}
-          <select className="input-dark w-40" value={filters.mes} onChange={e => sf('mes', e.target.value)}>
+        <div className="filter-bar">
+          <select className="input-dark" style={{ width: 160 }} value={filters.mes} onChange={e => sf('mes', e.target.value)}>
             <option value="">Mes: todos</option>
             {meses.map(m => (
               <option key={m} value={m}>
@@ -338,31 +349,33 @@ export default function Asignados() {
               </option>
             ))}
           </select>
-
-          {/* Cliente */}
-          <input className="input-dark w-44" placeholder="Cliente, DNI, PV..."
+          <div className="filter-sep"/>
+          <input className="input-dark" style={{ width: 200 }} placeholder="Buscar cliente, DNI, PV..."
             value={filters.search} onChange={e => sf('search', e.target.value)} />
-
-          {/* Campaña — por código del lead */}
-          <select className="input-dark w-44" value={filters.campana_codigo} onChange={e => sf('campana_codigo', e.target.value)}>
+          <div className="filter-sep"/>
+          <select className="input-dark" style={{ width: 160 }} value={filters.campana_codigo} onChange={e => sf('campana_codigo', e.target.value)}>
             <option value="">Campaña: todas</option>
             {codigosCampana.map(c => (
               <option key={c} value={c}>[{c}]</option>
             ))}
           </select>
-
-          {/* Tipo */}
-          <select className="input-dark w-36" value={filters.tipo} onChange={e => sf('tipo', e.target.value)}>
+          <select className="input-dark" style={{ width: 140 }} value={filters.tipo} onChange={e => sf('tipo', e.target.value)}>
             <option value="">Tipo: todos</option>
             <option>0KM</option>
             <option>USADO</option>
             <option>PLAN AHORRO</option>
           </select>
-
+          <div className="filter-sep"/>
           <button onClick={() => { setFilters({ search:'', tipo:'', campana_codigo:'', mes:'' }); setPage(0) }}
-            className="text-xs text-gray-600 hover:text-gray-300 self-center">
-            Limpiar
-          </button>
+            className="btn-ghost text-xs flex-shrink-0">Limpiar filtros</button>
+        </div>
+
+        {/* Contador */}
+        <div className="filter-results">
+          Mostrando <span>{data.length}</span> registros
+          {filters.mes && <> · Mes: <span>{new Date(filters.mes + '-15').toLocaleString('es-AR',{month:'long',year:'numeric'})}</span></>}
+          {filters.tipo && <> · Tipo: <span>{filters.tipo}</span></>}
+          {filters.campana_codigo && <> · Campaña: <span>[{filters.campana_codigo}]</span></>}
         </div>
 
         {/* Tabla */}
