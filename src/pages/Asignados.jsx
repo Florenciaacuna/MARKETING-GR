@@ -34,6 +34,8 @@ export default function Asignados() {
   const [codigosCampana,setCodigosCampana]= useState([])
   const [campanas,      setCampanas]      = useState([])
   const [origenes,      setOrigenes]      = useState([])
+  // Stats filtradas dinámicas
+  const [filteredStats, setFilteredStats] = useState(null)
   // Edición inline
   const [editing,  setEditing]  = useState(null)  // { id, field, value, leadId }
   const [saving,   setSaving]   = useState(false)
@@ -66,13 +68,56 @@ export default function Asignados() {
       ? q.gte('fecha', filters.mes + '-01').lte('fecha', filters.mes + '-31')
       : q
     const [r1, r2, r3, r4] = await Promise.all([
-      applyMes(supabase.from('mkt_ventas').select('*', { count: 'exact', head: true })).not('lead_id','is',null).not('lead_origen','eq','De paso'),
+      applyMes(supabase.from('mkt_ventas').select('*', { count: 'exact', head: true })).not('lead_id','is',null),
       applyMes(supabase.from('mkt_ventas').select('*', { count: 'exact', head: true })).is('lead_id', null),
       applyMes(supabase.from('mkt_ventas').select('*', { count: 'exact', head: true })),
       supabase.from('mkt_leads').select('*', { count: 'exact', head: true }),
     ])
     setStats({ digital: r1.count||0, otros: r2.count||0, totalV: r3.count||0, totalL: r4.count||0 })
   }, [filters.mes])
+
+  // Carga stats de la vista actual con los filtros aplicados
+  const loadFilteredStats = useCallback(async () => {
+    if (tab !== 'digital') { setFilteredStats(null); return }
+
+    // Mismo proceso que loadData pero solo para contar
+    let leadIdsFiltro = null
+    if (filters.campana_codigo) {
+      const { data: ml } = await supabase.from('mkt_leads')
+        .select('id').eq('codigo_campana', filters.campana_codigo)
+      leadIdsFiltro = (ml || []).map(l => l.id)
+    }
+
+    // IDs de ventas con entrega
+    const { data: ents } = await supabase.from('mkt_entregas')
+      .select('venta_id').not('venta_id', 'is', null)
+    const conEntregaSet = new Set((ents || []).map(e => e.venta_id).filter(Boolean))
+
+    // Contar ventas con los filtros actuales
+    let q = supabase.from('mkt_ventas')
+      .select('id,lead_origen', { count: 'exact' })
+      .not('lead_id', 'is', null)
+    if (filters.tipo)   q = q.ilike('tipo', '%' + filters.tipo + '%')
+    if (filters.mes)    q = q.gte('fecha', filters.mes + '-01').lte('fecha', filters.mes + '-31')
+    if (filters.search) q = q.or('nombre.ilike.%' + filters.search + '%,dni.eq.' + filters.search + ',pv_solicitud.ilike.%' + filters.search + '%')
+    if (leadIdsFiltro !== null) {
+      if (leadIdsFiltro.length > 0) q = q.in('lead_id', leadIdsFiltro)
+      else { setFilteredStats({ total: 0, conEntrega: 0, sinEntrega: 0 }); return }
+    }
+
+    const { data: ventas, count } = await q
+    if (!ventas) return
+
+    // Excluir De paso del conteo digital
+    const ventasDigital = ventas.filter(v => v.lead_origen !== 'De paso')
+    const totalDigital  = ventasDigital.length
+    const conEntrega    = ventasDigital.filter(v => conEntregaSet.has(v.id)).length
+    const sinEntrega    = totalDigital - conEntrega
+
+    setFilteredStats({ total: totalDigital, conEntrega, sinEntrega })
+  }, [tab, filters])
+
+  useEffect(() => { loadFilteredStats() }, [loadFilteredStats])
 
   const loadData = useCallback(async () => {
     setLoading(true)
@@ -366,19 +411,43 @@ export default function Asignados() {
             className="btn-ghost text-xs flex-shrink-0">Limpiar filtros</button>
         </div>
 
-        <div className="filter-results">
+     className="filter-results">
           Mostrando <span>{data.length}</span> registros
           {filters.mes && <> · Mes: <span>{new Date(filters.mes+'-15').toLocaleString('es-AR',{month:'long',year:'numeric'})}</span></>}
           {filters.tipo && <> · Tipo: <span>{filters.tipo}</span></>}
+          {filters.campana_codigo && <> · Campaña: <span>[{filters.campana_codigo}]</span></>}
           {filters.origen && <> · Origen: <span>{filters.origen}</span></>}
         </div>
+
+        {/* Stats dinámicas con filtros */}
+        {tab === 'digital' && filteredStats && (
+          <div className="grid grid-cols-3 gap-3 mb-4">
+            <div className="rounded-lg p-3 border text-center" style={{ background:'#111', borderColor:'#2a2a2a' }}>
+              <div className="text-xl font-black text-white">{filteredStats.total.toLocaleString('es-AR')}</div>
+              <div className="text-xs text-gray-500 mt-0.5 uppercase">Ventas con lead</div>
+              <div className="text-xs text-gray-600">Con filtros aplicados</div>
+            </div>
+            <div className="rounded-lg p-3 border text-center" style={{ background:'#1a2e00', borderColor: BRAND }}>
+              <div className="text-xl font-black" style={{ color: BRAND }}>{filteredStats.conEntrega.toLocaleString('es-AR')}</div>
+              <div className="text-xs mt-0.5 uppercase font-bold" style={{ color: BRAND }}>Con entrega</div>
+              <div className="text-xs text-gray-600">
+                {filteredStats.total > 0 ? Math.round(filteredStats.conEntrega/filteredStats.total*100) : 0}% del filtrado
+              </div>
+            </div>
+            <div className="rounded-lg p-3 border text-center" style={{ background:'#111', borderColor:'#2a2a2a' }}>
+              <div className="text-xl font-black text-white">{filteredStats.sinEntrega.toLocaleString('es-AR')}</div>
+              <div className="text-xs text-gray-500 mt-0.5 uppercase">Sin entrega</div>
+              <div className="text-xs text-gray-600">Pendiente de entrega</div>
+            </div>
+          </div>
+        )}
 
         <div className="overflow-x-auto rounded-lg border" style={{ borderColor:'#2a2a2a' }}>
           <table className="dark-table">
             <thead><tr>
-              <th>PV/Solicitud</th><th>Fecha</th><th>Tipo</th><th>Cliente</th>
-              <th>DNI</th><th>Vendedor</th><th>Marca</th>
-              {tab === 'digital' && <><th>Origen</th><th>Canal lead</th><th>Cód. campaña</th><th>Campaña vinculada</th><th>Match</th><th>Fecha entrega</th><th>Salón entrega</th></>}
+              <th>PV</th><th>Fecha</th><th>Tipo</th>
+              <th>Cliente / DNI</th><th>Vendedor</th><th>Marca</th>
+              {tab === 'digital' && <><th>Origen</th><th>Canal</th><th>Campaña</th><th>Match</th><th>Entrega</th></>}
               {tab === 'otros' && <th>Estado</th>}
             </tr></thead>
             <tbody>
@@ -396,21 +465,23 @@ export default function Asignados() {
                 const lead = v.mkt_leads
                 return (
                   <tr key={v.id}>
-                    <td className="font-mono text-xs" style={{ color: BRAND }}>{v.pv_solicitud?.replace('DER-','') || '—'}</td>
+                    <td className="font-mono text-xs" style={{ color: BRAND, whiteSpace:'nowrap' }}>{v.pv_solicitud?.replace('DER-','') || '—'}</td>
                     <td className="text-gray-500 text-xs whitespace-nowrap">
                       {v.fecha ? v.fecha.slice(0,10).split('-').reverse().join('/') : '—'}
                     </td>
-                    <td>{v.tipo ? <span className="badge badge-blue">{v.tipo}</span> : '—'}</td>
-                    <td className="font-medium text-white">{v.nombre || '—'}</td>
-                    <td className="font-mono text-xs text-gray-400">{v.dni || '—'}</td>
-                    <td className="text-gray-400">{v.vendedor || '—'}</td>
-                    <td>{v.marca ? <span className="badge badge-gray">{v.marca}</span> : '—'}</td>
+                    <td>{v.tipo ? <span className="badge badge-blue" style={{fontSize:'0.6rem'}}>{v.tipo}</span> : '—'}</td>
+                    <td>
+                      <div className="font-medium text-white text-xs">{v.nombre || '—'}</div>
+                      <div className="font-mono text-gray-600" style={{fontSize:'0.6rem'}}>{v.dni || ''}</div>
+                    </td>
+                    <td className="text-gray-400 text-xs">{v.vendedor?.split(' ')[0] || '—'}</td>
+                    <td>{v.marca ? <span className="badge badge-gray" style={{fontSize:'0.6rem'}}>{v.marca}</span> : '—'}</td>
 
                     {tab === 'digital' && <>
-                      {/* ORIGEN — solo lectura */}
-                      <td>
+                      {/* ORIGEN */}
+                      <td className="text-xs">
                         {lead?.origen
-                          ? <span className="badge badge-gray" style={{ fontSize:'0.65rem' }}>{lead.origen}</span>
+                          ? <span className="badge badge-gray" style={{fontSize:'0.6rem'}}>{lead.origen}</span>
                           : <span className="text-gray-600">—</span>}
                       </td>
 
@@ -418,63 +489,42 @@ export default function Asignados() {
                       <td onClick={() => !editing && setEditing({ id: v.id, field: 'canal', value: lead?.canal || '', leadId: lead?.id })}>
                         {editing?.id === v.id && editing?.field === 'canal' ? (
                           <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
-                            <input autoFocus className="input-dark text-xs" style={{ width: 100, padding: '2px 6px', height: 24 }}
+                            <input autoFocus className="input-dark text-xs" style={{ width: 90, padding: '2px 4px', height: 22 }}
                               value={editing.value}
                               onChange={e => setEditing(p => ({ ...p, value: e.target.value }))}
                               onKeyDown={e => { if(e.key==='Enter') saveEdit(); if(e.key==='Escape') setEditing(null) }} />
-                            <button onClick={saveEdit} disabled={saving} style={{ color: BRAND, fontSize: 11 }}>{saving?'...':'✓'}</button>
+                            <button onClick={saveEdit} disabled={saving} style={{ color: BRAND, fontSize: 10 }}>{saving?'…':'✓'}</button>
                             <button onClick={() => setEditing(null)} className="text-gray-600 text-xs">✕</button>
                           </div>
                         ) : (
                           <div className="cursor-pointer group">
-                            {lead?.canal ? <span className="badge badge-blue">{lead.canal}</span> : <span className="text-gray-600 text-xs">—</span>}
-                            <span className="opacity-0 group-hover:opacity-50 text-xs ml-1">✏</span>
+                            {lead?.canal ? <span className="badge badge-blue" style={{fontSize:'0.6rem',maxWidth:80,overflow:'hidden',textOverflow:'ellipsis',display:'block'}}>{lead.canal}</span> : <span className="text-gray-600 text-xs">— ✏</span>}
                           </div>
                         )}
                       </td>
 
-                      {/* CAMPAÑA — editable */}
-                      <td onClick={() => !editing && setEditing({ id: v.id, field: 'codigo_campana', value: lead?.codigo_campana || '', leadId: lead?.id })}>
-                        {editing?.id === v.id && editing?.field === 'codigo_campana' ? (
-                          <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
-                            <input autoFocus className="input-dark text-xs" style={{ width: 80, padding: '2px 6px', height: 24 }}
-                              value={editing.value}
-                              onChange={e => setEditing(p => ({ ...p, value: e.target.value }))}
-                              onKeyDown={e => { if(e.key==='Enter') saveEdit(); if(e.key==='Escape') setEditing(null) }} />
-                            <button onClick={saveEdit} disabled={saving} style={{ color: BRAND, fontSize: 11 }}>{saving?'...':'✓'}</button>
-                            <button onClick={() => setEditing(null)} className="text-gray-600 text-xs">✕</button>
+                      {/* CAMPAÑA — código + vinculada en una sola celda editable */}
+                      <td>
+                        <div className="flex flex-col gap-0.5">
+                          {lead?.codigo_campana && <span className="badge badge-green" style={{fontSize:'0.6rem'}}>[{lead.codigo_campana}]</span>}
+                          <div className="cursor-pointer group" onClick={() => !editing && setEditing({ id: v.id, field: 'campana_id', value: v.campana_id || '', leadId: null })}>
+                            {editing?.id === v.id && editing?.field === 'campana_id' ? (
+                              <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
+                                <select autoFocus className="input-dark text-xs" style={{ width: 130, padding: '2px 4px', height: 22 }}
+                                  value={editing.value} onChange={e => setEditing(p => ({ ...p, value: e.target.value }))}>
+                                  <option value="">— Sin campaña</option>
+                                  {campanas.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+                                </select>
+                                <button onClick={saveEdit} disabled={saving} style={{ color: BRAND, fontSize: 10 }}>{saving?'…':'✓'}</button>
+                                <button onClick={() => setEditing(null)} className="text-gray-600 text-xs">✕</button>
+                              </div>
+                            ) : (
+                              <span className="text-gray-500 text-xs group-hover:text-gray-300">
+                                {v.mkt_campanas?.nombre || '— ✏'}
+                              </span>
+                            )}
                           </div>
-                        ) : (
-                          <div className="cursor-pointer group">
-                            {lead?.codigo_campana ? <span className="badge badge-green">[{lead.codigo_campana}]</span> : <span className="text-gray-600 text-xs">—</span>}
-                            <span className="opacity-0 group-hover:opacity-50 text-xs ml-1">✏</span>
-                          </div>
-                        )}
-                      </td>
-
-                      {/* CAMPAÑA VINCULADA (mkt_campanas) — editable con dropdown */}
-                      <td onClick={() => !editing && setEditing({ id: v.id, field: 'campana_id', value: v.campana_id || '', leadId: null })}>
-                        {editing?.id === v.id && editing?.field === 'campana_id' ? (
-                          <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
-                            <select autoFocus className="input-dark text-xs" style={{ width: 160, padding: '2px 6px', height: 24 }}
-                              value={editing.value}
-                              onChange={e => setEditing(p => ({ ...p, value: e.target.value }))}>
-                              <option value="">— Sin campaña</option>
-                              {campanas.map(c => (
-                                <option key={c.id} value={c.id}>{c.nombre}</option>
-                              ))}
-                            </select>
-                            <button onClick={saveEdit} disabled={saving} style={{ color: BRAND, fontSize: 11 }}>{saving?'...':'✓'}</button>
-                            <button onClick={() => setEditing(null)} className="text-gray-600 text-xs">✕</button>
-                          </div>
-                        ) : (
-                          <div className="cursor-pointer group">
-                            {v.mkt_campanas?.nombre
-                              ? <span className="badge badge-green">{v.mkt_campanas.nombre}</span>
-                              : <span className="text-gray-600 text-xs">— asignar</span>}
-                            <span className="opacity-0 group-hover:opacity-50 text-xs ml-1">✏</span>
-                          </div>
-                        )}
+                        </div>
                       </td>
 
                       {/* MATCH — editable */}
@@ -498,13 +548,15 @@ export default function Asignados() {
                         )}
                       </td>
 
-                      {/* ENTREGA */}
-                      <td className="text-xs whitespace-nowrap">
-                        {v.entrega?.fecha_entrega
-                          ? <span style={{ color: BRAND }}>{String(v.entrega.fecha_entrega).slice(0,10).split('-').reverse().join('/')}</span>
+                      {/* ENTREGA — fecha + salón combinados */}
+                      <td className="text-xs">
+                        {v.entrega
+                          ? <div>
+                              <div style={{ color: BRAND, whiteSpace:'nowrap' }}>{String(v.entrega.fecha_entrega||'').slice(0,10).split('-').reverse().join('/')}</div>
+                              <div className="text-gray-600" style={{fontSize:'0.6rem'}}>{v.entrega.salon}</div>
+                            </div>
                           : <span className="text-gray-600">—</span>}
                       </td>
-                      <td className="text-xs text-gray-400">{v.entrega?.salon || '—'}</td>
                     </>}
 
                     {tab === 'otros' && <td><span className="badge badge-gray">Sin coincidencia</span></td>}
