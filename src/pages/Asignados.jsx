@@ -22,20 +22,23 @@ function normDNI(d) {
 }
 
 export default function Asignados() {
-  const [tab,            setTab]            = useState('digital')
-  const [data,           setData]           = useState([])
-  const [stats,          setStats]          = useState(null)
-  const [loading,        setLoading]        = useState(true)
-  const [running,        setRunning]        = useState(false)
-  const [runLog,         setRunLog]         = useState([])
-  const [page,           setPage]           = useState(0)
-  const [filters,        setFilters]        = useState({ search: '', tipo: '', campana_codigo: '', mes: '', origen: '' })
-  const [meses,          setMeses]          = useState([])
-  const [codigosCampana, setCodigosCampana] = useState([])
-  const [campanas,       setCampanas]       = useState([])
-  const [origenes,       setOrigenes]       = useState([])
-  const [editing,        setEditing]        = useState(null)
-  const [saving,         setSaving]         = useState(false)
+  const [tab,           setTab]           = useState('digital')
+  const [data,          setData]          = useState([])
+  const [stats,         setStats]         = useState(null)
+  const [loading,       setLoading]       = useState(true)
+  const [running,       setRunning]       = useState(false)
+  const [runLog,        setRunLog]        = useState([])
+  const [page,          setPage]          = useState(0)
+  const [filters,       setFilters]       = useState({ search: '', tipo: '', campana_codigo: '', mes: '', origen: '' })
+  const [meses,         setMeses]         = useState([])
+  const [codigosCampana,setCodigosCampana]= useState([])
+  const [campanas,      setCampanas]      = useState([])
+  const [origenes,      setOrigenes]      = useState([])
+  // Stats filtradas dinámicas
+  const [filteredStats, setFilteredStats] = useState(null)
+  // Edición inline
+  const [editing,  setEditing]  = useState(null)  // { id, field, value, leadId }
+  const [saving,   setSaving]   = useState(false)
 
   useEffect(() => {
     supabase.from('mkt_ventas').select('fecha').not('fecha','is',null)
@@ -73,9 +76,11 @@ export default function Asignados() {
     setStats({ digital: r1.count||0, otros: r2.count||0, totalV: r3.count||0, totalL: r4.count||0 })
   }, [filters.mes])
 
-  const loadData = useCallback(async () => {
-    setLoading(true)
+  // Carga stats de la vista actual con los filtros aplicados
+  const loadFilteredStats = useCallback(async () => {
+    if (tab !== 'digital') { setFilteredStats(null); return }
 
+    // Mismo proceso que loadData pero solo para contar
     let leadIdsFiltro = null
     if (filters.campana_codigo) {
       const { data: ml } = await supabase.from('mkt_leads')
@@ -83,6 +88,49 @@ export default function Asignados() {
       leadIdsFiltro = (ml || []).map(l => l.id)
     }
 
+    // IDs de ventas con entrega
+    const { data: ents } = await supabase.from('mkt_entregas')
+      .select('venta_id').not('venta_id', 'is', null)
+    const conEntregaSet = new Set((ents || []).map(e => e.venta_id).filter(Boolean))
+
+    // Contar ventas con los filtros actuales
+    let q = supabase.from('mkt_ventas')
+      .select('id,lead_origen', { count: 'exact' })
+      .not('lead_id', 'is', null)
+    if (filters.tipo)   q = q.ilike('tipo', '%' + filters.tipo + '%')
+    if (filters.mes)    q = q.gte('fecha', filters.mes + '-01').lte('fecha', filters.mes + '-31')
+    if (filters.search) q = q.or('nombre.ilike.%' + filters.search + '%,dni.eq.' + filters.search + ',pv_solicitud.ilike.%' + filters.search + '%')
+    if (leadIdsFiltro !== null) {
+      if (leadIdsFiltro.length > 0) q = q.in('lead_id', leadIdsFiltro)
+      else { setFilteredStats({ total: 0, conEntrega: 0, sinEntrega: 0 }); return }
+    }
+
+    const { data: ventas, count } = await q
+    if (!ventas) return
+
+    // Excluir De paso del conteo digital
+    const ventasDigital = ventas.filter(v => v.lead_origen !== 'De paso')
+    const totalDigital  = ventasDigital.length
+    const conEntrega    = ventasDigital.filter(v => conEntregaSet.has(v.id)).length
+    const sinEntrega    = totalDigital - conEntrega
+
+    setFilteredStats({ total: totalDigital, conEntrega, sinEntrega })
+  }, [tab, filters])
+
+  useEffect(() => { loadFilteredStats() }, [loadFilteredStats])
+
+  const loadData = useCallback(async () => {
+    setLoading(true)
+
+    // 1. Filtro campaña
+    let leadIdsFiltro = null
+    if (filters.campana_codigo) {
+      const { data: ml } = await supabase.from('mkt_leads')
+        .select('id').eq('codigo_campana', filters.campana_codigo)
+      leadIdsFiltro = (ml || []).map(l => l.id)
+    }
+
+    // 2. Query principal
     let q = supabase.from('mkt_ventas')
       .select(`id,pv_solicitud,fecha,tipo,nombre,dni,telefono_personal,celular_personal,
                vendedor,marca,fuente,metodo_match,lead_id,campana_id,proceso,lead_origen,
@@ -101,7 +149,6 @@ export default function Asignados() {
       if (leadIdsFiltro.length > 0) q = q.in('lead_id', leadIdsFiltro)
       else q = q.eq('id', '00000000-0000-0000-0000-000000000000')
     }
-
     const { data: rows } = await q
     if (!rows || rows.length === 0) { setData([]); setLoading(false); return }
 
@@ -111,6 +158,7 @@ export default function Asignados() {
 
   useEffect(() => { loadStats(); loadData() }, [loadStats, loadData])
 
+  // ── CRUCE ──────────────────────────────────────────────────
   async function ejecutarCruce() {
     setRunning(true); setRunLog(['Iniciando cruce...'])
     const log = (m) => setRunLog(prev => [...prev, m])
@@ -168,8 +216,8 @@ export default function Asignados() {
       const vDNI     = normDNI(v.dni)
       const vPhones  = [normPhone(v.telefono_personal), normPhone(v.celular_personal)].filter(Boolean)
       let lead = null, metodo = null
-      if (vProceso && byJobSeq.has(vProceso))       { lead = byJobSeq.get(vProceso); metodo = 'proceso';    matchProceso++ }
-      if (!lead && vDNI && byDNI.has(vDNI))         { lead = byDNI.get(vDNI);        metodo = 'dni';        matchDNI++ }
+      if (vProceso && byJobSeq.has(vProceso))        { lead = byJobSeq.get(vProceso); metodo = 'proceso';    matchProceso++ }
+      if (!lead && vDNI && byDNI.has(vDNI))          { lead = byDNI.get(vDNI);        metodo = 'dni';        matchDNI++ }
       if (!lead) for (const p of vPhones) if (byPhone.has(p))  { lead = byPhone.get(p);  metodo = 'telefono'; matchTel++;  break }
       if (!lead) for (const p of vPhones) { const p8 = p.slice(-8); if (p8.length===8 && byPhone8.has(p8)) { lead = byPhone8.get(p8); metodo = 'tel_parcial'; matchTel8++; break } }
       if (!lead) sinMatch++
@@ -188,6 +236,7 @@ export default function Asignados() {
     setRunning(false); loadStats(); loadData()
   }
 
+  // ── EDICIÓN INLINE ────────────────────────────────────────
   async function saveEdit() {
     if (!editing) return
     setSaving(true)
@@ -322,17 +371,41 @@ export default function Asignados() {
             {origenes.map(o => <option key={o} value={o}>{o}</option>)}
           </select>
           <div className="filter-sep"/>
+
           <button onClick={() => { setFilters({ search:'', tipo:'', campana_codigo:'', mes:'', origen:'' }); setPage(0) }}
             className="btn-ghost text-xs flex-shrink-0">Limpiar filtros</button>
         </div>
 
-        <div className="filter-results">
+     className="filter-results">
           Mostrando <span>{data.length}</span> registros
-          {filters.mes && <> · Mes: <span>{new Date(filters.mes+'-15').toLocaleString('es-AR',{month:'long',year:'numeric'})}</span></>}
-          {filters.tipo && <> · Tipo: <span>{filters.tipo}</span></>}
-          {filters.campana_codigo && <> · Campaña: <span>[{filters.campana_codigo}]</span></>}
-          {filters.origen && <> · Origen: <span>{filters.origen}</span></>}
+          {filters.mes && <>{' | Mes: '}<span>{new Date(filters.mes+'-15').toLocaleString('es-AR',{month:'long',year:'numeric'})}</span></>}
+          {filters.tipo && <>{' | Tipo: '}<span>{filters.tipo}</span></>}
+          {filters.campana_codigo && <>{' | Campaña: '}<span>[{filters.campana_codigo}]</span></>}
+          {filters.origen && <>{' | Origen: '}<span>{filters.origen}</span></>}
         </div>
+
+        {/* Stats dinámicas con filtros */}
+        {tab === 'digital' && filteredStats && (
+          <div className="grid grid-cols-3 gap-3 mb-4">
+            <div className="rounded-lg p-3 border text-center" style={{ background:'#111', borderColor:'#2a2a2a' }}>
+              <div className="text-xl font-black text-white">{filteredStats.total.toLocaleString('es-AR')}</div>
+              <div className="text-xs text-gray-500 mt-0.5 uppercase">Ventas con lead</div>
+              <div className="text-xs text-gray-600">Con filtros aplicados</div>
+            </div>
+            <div className="rounded-lg p-3 border text-center" style={{ background:'#1a2e00', borderColor: BRAND }}>
+              <div className="text-xl font-black" style={{ color: BRAND }}>{filteredStats.conEntrega.toLocaleString('es-AR')}</div>
+              <div className="text-xs mt-0.5 uppercase font-bold" style={{ color: BRAND }}>Con entrega</div>
+              <div className="text-xs text-gray-600">
+                {filteredStats.total > 0 ? Math.round(filteredStats.conEntrega/filteredStats.total*100) : 0}% del filtrado
+              </div>
+            </div>
+            <div className="rounded-lg p-3 border text-center" style={{ background:'#111', borderColor:'#2a2a2a' }}>
+              <div className="text-xl font-black text-white">{filteredStats.sinEntrega.toLocaleString('es-AR')}</div>
+              <div className="text-xs text-gray-500 mt-0.5 uppercase">Sin entrega</div>
+              <div className="text-xs text-gray-600">Pendiente de entrega</div>
+            </div>
+          </div>
+        )}
 
         <div className="overflow-x-auto rounded-lg border" style={{ borderColor:'#2a2a2a' }}>
           <table className="dark-table">
@@ -343,9 +416,9 @@ export default function Asignados() {
               {tab === 'otros' && <th>Estado</th>}
             </tr></thead>
             <tbody>
-              {loading && <tr><td colSpan={9} className="text-center py-8 text-gray-600">Cargando...</td></tr>}
+              {loading && <tr><td colSpan={10} className="text-center py-8 text-gray-600">Cargando...</td></tr>}
               {!loading && data.length === 0 && (
-                <tr><td colSpan={9} className="text-center py-10 text-gray-600">
+                <tr><td colSpan={10} className="text-center py-10 text-gray-600">
                   {tab === 'digital' ? 'Sin ventas con lead. Ejecutá el cruce primero.' : 'Todas las ventas tienen lead.'}
                 </td></tr>
               )}
@@ -370,12 +443,14 @@ export default function Asignados() {
                     <td>{v.marca ? <span className="badge badge-gray" style={{fontSize:'0.6rem'}}>{v.marca}</span> : '—'}</td>
 
                     {tab === 'digital' && <>
+                      {/* ORIGEN */}
                       <td className="text-xs">
                         {lead?.origen
                           ? <span className="badge badge-gray" style={{fontSize:'0.6rem'}}>{lead.origen}</span>
                           : <span className="text-gray-600">—</span>}
                       </td>
 
+                      {/* CANAL — editable */}
                       <td onClick={() => !editing && setEditing({ id: v.id, field: 'canal', value: lead?.canal || '', leadId: lead?.id })}>
                         {editing?.id === v.id && editing?.field === 'canal' ? (
                           <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
@@ -388,13 +463,12 @@ export default function Asignados() {
                           </div>
                         ) : (
                           <div className="cursor-pointer group">
-                            {lead?.canal
-                              ? <span className="badge badge-blue" style={{fontSize:'0.6rem',maxWidth:80,overflow:'hidden',textOverflow:'ellipsis',display:'block'}}>{lead.canal}</span>
-                              : <span className="text-gray-600 text-xs">— ✏</span>}
+                            {lead?.canal ? <span className="badge badge-blue" style={{fontSize:'0.6rem',maxWidth:80,overflow:'hidden',textOverflow:'ellipsis',display:'block'}}>{lead.canal}</span> : <span className="text-gray-600 text-xs">— ✏</span>}
                           </div>
                         )}
                       </td>
 
+                      {/* CAMPAÑA — código + vinculada en una sola celda editable */}
                       <td>
                         <div className="flex flex-col gap-0.5">
                           {lead?.codigo_campana && <span className="badge badge-green" style={{fontSize:'0.6rem'}}>[{lead.codigo_campana}]</span>}
@@ -418,6 +492,7 @@ export default function Asignados() {
                         </div>
                       </td>
 
+                      {/* MATCH — editable */}
                       <td onClick={() => !editing && setEditing({ id: v.id, field: 'metodo_match', value: v.metodo_match || '', leadId: null })}>
                         {editing?.id === v.id && editing?.field === 'metodo_match' ? (
                           <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
@@ -437,6 +512,8 @@ export default function Asignados() {
                           </div>
                         )}
                       </td>
+
+
                     </>}
 
                     {tab === 'otros' && <td><span className="badge badge-gray">Sin coincidencia</span></td>}
