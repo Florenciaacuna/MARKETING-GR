@@ -219,7 +219,7 @@ export default function Asignados() {
 
       <div className="card">
         <div className="flex items-start justify-between mb-4">
-          <p className="text-xs text-gray-500">Cruce ventas - leads por JOB_SEQ, DNI y telefono</p>
+          
           <button onClick={ejecutarCruce} disabled={running} className="btn-primary">
             {running ? 'Ejecutando...' : 'Ejecutar cruce'}
           </button>
@@ -268,7 +268,7 @@ export default function Asignados() {
         <div className="flex gap-1 border-b mb-4" style={{ borderColor:'#2a2a2a' }}>
           <button onClick={() => { setTab('digital'); setPage(0) }}
             className={'px-4 py-2 text-xs font-semibold border-b-2 transition-all -mb-px ' + (tab === 'digital' ? 'text-white border-[#B5E000]' : 'text-gray-500 border-transparent hover:text-gray-300')}>
-            Lead digital y llamada ({stats ? stats.digital : 0})
+            Lead asignado ({stats ? stats.digital : 0})
           </button>
           <button onClick={() => { setTab('otros'); setPage(0) }}
             className={'px-4 py-2 text-xs font-semibold border-b-2 transition-all -mb-px ' + (tab === 'otros' ? 'text-white border-[#B5E000]' : 'text-gray-500 border-transparent hover:text-gray-300')}>
