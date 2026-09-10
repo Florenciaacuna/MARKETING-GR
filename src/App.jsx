@@ -54,15 +54,8 @@ export default function App() {
       <aside className="w-52 flex-shrink-0 flex flex-col border-r" style={{ background: DARK, borderColor: '#1f1f1f' }}>
 
         {/* Logo */}
-        <div className="px-4 py-4 border-b" style={{ borderColor: '#1f1f1f' }}>
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-lg flex items-center justify-center font-black text-base flex-shrink-0"
-              style={{ background: BRAND, color: DARK }}>ZZ</div>
-            <div>
-              <div className="text-white font-bold text-xs leading-tight">Grupo Randazzo</div>
-              <div className="text-xs" style={{ color: BRAND }}>Área de Marketing</div>
-            </div>
-          </div>
+        <div className="px-3 py-3 border-b" style={{ borderColor: '#1f1f1f' }}>
+          <img src="/logo-randazzo.png" alt="Grupo Randazzo" style={{ width:'100%', maxWidth:160, display:'block', margin:'0 auto' }} />
         </div>
 
         {/* Conectado */}
