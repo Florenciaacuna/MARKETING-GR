@@ -206,9 +206,9 @@ export default function Asignados() {
       }
       if (lead.job_seq) byJobSeq.set(String(lead.job_seq), lead)
     }
-    log('Índices → DNI: ' + byDNI.size + ' | Teléfonos: ' + byPhone.size + ' | Tel-8díg: ' + byPhone8.size + ' | JOB_SEQ: ' + byJobSeq.size)
+    log('Índices -> DNI: ' + byDNI.size + ' | Teléfonos: ' + byPhone.size + ' | Tel-8díg: ' + byPhone8.size + ' | JOB_SEQ: ' + byJobSeq.size)
 
-    log('Ejecutando cruce JOB_SEQ → DNI → Tel exacto → Últimos 8 dígitos...')
+    log('Ejecutando cruce JOB_SEQ -> DNI -> Tel exacto -> Últimos 8 dígitos...')
     const updates = []
     let matchProceso = 0, matchDNI = 0, matchTel = 0, matchTel8 = 0, sinMatch = 0
     for (const v of allVentas) {
@@ -223,7 +223,7 @@ export default function Asignados() {
       if (!lead) sinMatch++
       updates.push({ id: v.id, lead_id: lead?.id||null, campana_id: lead?.campana_id||null, metodo_match: metodo, lead_origen: lead?.origen||null })
     }
-    log('Matches → JOB_SEQ: ' + matchProceso + ' | DNI: ' + matchDNI + ' | Tel exacto: ' + matchTel + ' | Tel 8 díg: ' + matchTel8 + ' | Sin match: ' + sinMatch)
+    log('Matches -> JOB_SEQ: ' + matchProceso + ' | DNI: ' + matchDNI + ' | Tel exacto: ' + matchTel + ' | Tel 8 díg: ' + matchTel8 + ' | Sin match: ' + sinMatch)
 
     log('Guardando resultados...')
     for (let i = 0; i < updates.length; i += 100) {
@@ -254,6 +254,9 @@ export default function Asignados() {
   const sf = (k, v) => { setFilters(p => ({ ...p, [k]: v })); setPage(0) }
   const pct = stats?.totalV > 0 ? Math.round((stats.digital / stats.totalV) * 100) : 0
 
+  const fmtDate = d => d ? String(d).slice(0,10).split("-").reverse().join("/") : "-"
+  const fmtPct  = (a,b) => b > 0 ? Math.round(a*100/b) : 0
+
   return (
     <div className="space-y-5">
 
@@ -262,7 +265,7 @@ export default function Asignados() {
         <div className="flex items-start justify-between mb-5">
           <div>
             <h2 className="font-bold text-white text-base">Asignados</h2>
-            <p className="text-xs text-gray-500 mt-0.5">Cruce ventas → leads por JOB_SEQ, DNI y teléfono</p>
+            <p className="text-xs text-gray-500 mt-0.5">Cruce ventas -> leads por JOB_SEQ, DNI y teléfono</p>
           </div>
           <button onClick={ejecutarCruce} disabled={running} className="btn-primary">
             {running ? 'Ejecutando...' : 'Ejecutar cruce'}
@@ -307,8 +310,8 @@ export default function Asignados() {
         <span className="info-icon">⚡</span>
         <div>
           <strong>¿Cómo funciona el cruce?</strong> El sistema busca en 4 niveles:
-          <strong> JOB_SEQ</strong> (vínculo directo del Celer) →
-          <strong> DNI</strong> → <strong> Teléfono exacto</strong> → <strong> Últimos 8 dígitos</strong>.
+          <strong> JOB_SEQ</strong> (vínculo directo del Celer) ->
+          <strong> DNI</strong> -> <strong> Teléfono exacto</strong> -> <strong> Últimos 8 dígitos</strong>.
           Las columnas <strong>Canal</strong>, <strong>Campaña</strong> y <strong>Match</strong> son editables — hacé clic en cualquier celda para modificarla.
         </div>
       </div>
@@ -396,7 +399,7 @@ export default function Asignados() {
               <div className="text-xl font-black" style={{ color: BRAND }}>{filteredStats.conEntrega.toLocaleString('es-AR')}</div>
               <div className="text-xs mt-0.5 uppercase font-bold" style={{ color: BRAND }}>Con entrega</div>
               <div className="text-xs text-gray-600">
-                {filteredStats.total > 0 ? Math.round(filteredStats.conEntrega/filteredStats.total*100) : 0}% del filtrado
+                {filteredStats.total > 0 ? fmtPct(filteredStats.conEntrega, filteredStats.total) : 0}{'% del filtrado'}
               </div>
             </div>
             <div className="rounded-lg p-3 border text-center" style={{ background:'#111', borderColor:'#2a2a2a' }}>
@@ -432,7 +435,7 @@ export default function Asignados() {
                   <tr key={v.id}>
                     <td className="font-mono text-xs" style={{ color: BRAND, whiteSpace:'nowrap' }}>{v.pv_solicitud?.replace('DER-','') || '—'}</td>
                     <td className="text-gray-500 text-xs whitespace-nowrap">
-                      {v.fecha ? v.fecha.slice(0,10).split('-').reverse().join('/') : '—'}
+                      {fmtDate(v.fecha)}
                     </td>
                     <td>{v.tipo ? <span className="badge badge-blue" style={{fontSize:'0.6rem'}}>{v.tipo}</span> : '—'}</td>
                     <td>
@@ -527,8 +530,8 @@ export default function Asignados() {
         <div className="flex items-center justify-between mt-3">
           <span className="text-xs text-gray-600">Página {page+1}</span>
           <div className="flex gap-2">
-            <button onClick={() => setPage(p => Math.max(0,p-1))} disabled={page===0} className="btn-ghost text-xs">← Anterior</button>
-            <button onClick={() => setPage(p => p+1)} disabled={data.length < PAGE} className="btn-ghost text-xs">Siguiente →</button>
+            <button onClick={() => setPage(p => Math.max(0,p-1))} disabled={page===0} className="btn-ghost text-xs">Anterior</button>
+            <button onClick={() => setPage(p => p+1)} disabled={data.length < PAGE} className="btn-ghost text-xs">Siguiente</button>
           </div>
         </div>
       </div>
