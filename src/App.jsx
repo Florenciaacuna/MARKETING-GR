@@ -42,6 +42,7 @@ export default function App() {
   const username = session.user.email?.split('@')[0] || 'Usuario'
   const initial  = (session.user.email?.[0] || 'U').toUpperCase()
 
+  const isGuest = new URLSearchParams(window.location.search).get('guest') === '1'
   const visibleTabs = isGuest
     ? NAV.filter(t => ['dashboard','asignados'].includes(t.id))
     : NAV
@@ -75,7 +76,7 @@ export default function App() {
         {/* Nav */}
         <nav className="flex-1 px-2 py-3 space-y-0.5">
           <div className="text-xs font-bold text-gray-600 uppercase tracking-widest px-2 mb-2">Principal</div>
-          {NAV.map(item => (
+          {visibleTabs.map(item => (
             <button key={item.id} onClick={() => setTab(item.id)}
               className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-semibold transition-all text-left
                 ${tab === item.id ? 'shadow-lg' : 'text-gray-500 hover:text-white hover:bg-white/5'}`}
