@@ -324,25 +324,7 @@ export default function Asignados() {
           {filters.origen && <span> - Origen: <span>{filters.origen}</span></span>}
         </div>
 
-        {tab === 'digital' && filteredStats && (
-          <div className="grid grid-cols-3 gap-3 mb-4">
-            <div className="rounded-lg p-3 border text-center" style={{ background:'#111', borderColor:'#2a2a2a' }}>
-              <div className="text-xl font-black text-white">{filteredStats.total.toLocaleString('es-AR')}</div>
-              <div className="text-xs text-gray-500 mt-0.5 uppercase">Ventas con lead</div>
-              <div className="text-xs text-gray-600">Con filtros aplicados</div>
-            </div>
-            <div className="rounded-lg p-3 border text-center" style={{ background:'#1a2e00', borderColor: BRAND }}>
-              <div className="text-xl font-black" style={{ color: BRAND }}>{filteredStats.conEntrega.toLocaleString('es-AR')}</div>
-              <div className="text-xs mt-0.5 uppercase font-bold" style={{ color: BRAND }}>Con entrega</div>
-              <div className="text-xs text-gray-600">{pctFiltEnt}% del filtrado</div>
-            </div>
-            <div className="rounded-lg p-3 border text-center" style={{ background:'#111', borderColor:'#2a2a2a' }}>
-              <div className="text-xl font-black text-white">{filteredStats.sinEntrega.toLocaleString('es-AR')}</div>
-              <div className="text-xs text-gray-500 mt-0.5 uppercase">Sin entrega</div>
-              <div className="text-xs text-gray-600">Pendiente</div>
-            </div>
-          </div>
-        )}
+
 
         <div className="overflow-x-auto rounded-lg border" style={{ borderColor:'#2a2a2a' }}>
           <table className="dark-table">
