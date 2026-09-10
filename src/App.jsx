@@ -109,7 +109,7 @@ export default function App() {
       <main className="flex-1 overflow-y-auto" style={{ background: '#0f0f0f' }}>
         <div className="sticky top-0 z-10 px-6 py-3 flex items-center justify-between border-b"
           style={{ background: '#0a0a0a', borderColor: '#1f1f1f' }}>
-          <h1 className="font-bold text-white text-base">{NAV.find(n => n.id === tab)?.label}</h1>
+          <h1 className="font-bold text-white text-sm uppercase tracking-widest">{NAV.find(n => n.id === tab)?.label}</h1>
           <div className="text-xs text-gray-500">
             {new Date().toLocaleDateString('es-AR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
           </div>
