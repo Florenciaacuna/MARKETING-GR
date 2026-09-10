@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
-import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer } from 'recharts'
+import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer, BarChart, Bar, XAxis, YAxis } from 'recharts'
 
 const BRAND   = '#B5E000'
 const PALETTE = ['#B5E000','#8ca800','#5f7200','#d4f000','#3d5200','#a3c200','#6b8a00','#e8ff4d']
@@ -40,6 +40,7 @@ export default function Dashboard() {
   const [metodos,  setMetodos]  = useState([])
   const [canales,  setCanales]  = useState([])
   const [marcas,   setMarcas]   = useState([])
+  const [marcaDet, setMarcaDet] = useState([])
   const [loading,  setLoading]  = useState(true)
 
   const applyFiltro = useCallback(q => {
@@ -88,12 +89,20 @@ export default function Dashboard() {
       setCanales(Object.entries(map).sort((a,b)=>b[1]-a[1]).slice(0,8).map(([name,value])=>({ name, value })))
     }
 
-    // Marcas
-    const { data: vMarca } = await applyFiltro(supabase.from('mkt_ventas').select('marca').not('marca','is',null))
+    // Marcas con detalle de leads
+    const { data: vMarca } = await applyFiltro(supabase.from('mkt_ventas').select('marca,lead_id').not('marca','is',null))
     if (vMarca) {
       const map = {}
-      vMarca.forEach(v => { map[v.marca] = (map[v.marca]||0)+1 })
-      setMarcas(Object.entries(map).sort((a,b)=>b[1]-a[1]).map(([name,value])=>({ name, value })))
+      vMarca.forEach(v => {
+        if (!map[v.marca]) map[v.marca] = { total:0, conLead:0 }
+        map[v.marca].total++
+        if (v.lead_id) map[v.marca].conLead++
+      })
+      const arr = Object.entries(map)
+        .sort((a,b) => b[1].total - a[1].total)
+        .map(([name, d]) => ({ name, total: d.total, conLead: d.conLead, sinLead: d.total - d.conLead }))
+      setMarcas(arr.map(m => ({ name: m.name, value: m.total })))
+      setMarcaDet(arr)
     }
 
     setLoading(false)
@@ -234,22 +243,43 @@ export default function Dashboard() {
       {/* GRAFICOS FILA 2: Marcas + Tabla */}
       <div className="grid grid-cols-2 gap-4">
 
-        {/* Torta por marca */}
+        {/* Barras horizontales por marca con leads vs sin leads */}
         <div className="card">
-          <div className="section-header"><h2>Ventas por marca</h2></div>
-          {marcas.length > 0 ? (
-            <ResponsiveContainer width="100%" height={260}>
-              <PieChart>
-                <Pie data={marcas} cx="50%" cy="50%" outerRadius={90} innerRadius={30}
-                  dataKey="value" nameKey="name" paddingAngle={2}>
-                  {marcas.map((_, i) => <Cell key={i} fill={PALETTE[i % PALETTE.length]} />)}
-                </Pie>
-                <Tooltip content={<Tip />} />
-                <Legend content={<PieLegend />} />
-              </PieChart>
+          <div className="section-header">
+            <h2>Ventas por marca</h2>
+          </div>
+          <div className="flex gap-4 mb-3">
+            <div className="flex items-center gap-1.5 text-xs" style={{ color:'#9ca3af' }}>
+              <div style={{ width:10, height:10, borderRadius:2, background: BRAND }}/>
+              Con lead
+            </div>
+            <div className="flex items-center gap-1.5 text-xs" style={{ color:'#9ca3af' }}>
+              <div style={{ width:10, height:10, borderRadius:2, background:'#2a2a2a' }}/>
+              Sin lead
+            </div>
+          </div>
+          {marcaDet.length > 0 ? (
+            <ResponsiveContainer width="100%" height={Math.max(180, marcaDet.length * 48)}>
+              <BarChart data={marcaDet} layout="vertical" margin={{ left:8, right:24, top:0, bottom:0 }}>
+                <XAxis type="number" hide />
+                <YAxis type="category" dataKey="name" width={80} tick={{ fill:'#9ca3af', fontSize:11, fontWeight:'bold' }} />
+                <Tooltip content={({ active, payload, label }) => {
+                  if (!active || !payload || !payload.length) return null
+                  const total = payload.reduce((a,b) => a + (b.value||0), 0)
+                  return (
+                    <div style={{ background:'#1a1a1a', border:'1px solid #2a2a2a', borderRadius:8, padding:'8px 12px', fontSize:12 }}>
+                      <div style={{ color:'#fff', fontWeight:'bold', marginBottom:4 }}>{label}</div>
+                      {payload.map((p,i) => <div key={i} style={{ color: p.fill === BRAND ? BRAND : '#6b7280' }}>{p.name}: {fmt(p.value)}</div>)}
+                      <div style={{ color:'#4b5563', marginTop:4, borderTop:'1px solid #2a2a2a', paddingTop:4 }}>Total: {fmt(total)}</div>
+                    </div>
+                  )
+                }} cursor={{ fill:'#ffffff05' }} />
+                <Bar dataKey="conLead" name="Con lead" stackId="a" fill={BRAND} radius={[0,0,0,0]} />
+                <Bar dataKey="sinLead" name="Sin lead"  stackId="a" fill="#2a3d00" radius={[0,4,4,0]} />
+              </BarChart>
             </ResponsiveContainer>
           ) : (
-            <div className="flex items-center justify-center h-48">
+            <div className="flex items-center justify-center h-32">
               <p className="text-xs" style={{ color:'#4b5563' }}>Sin datos.</p>
             </div>
           )}
