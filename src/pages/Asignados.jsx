@@ -218,11 +218,8 @@ export default function Asignados() {
     <div className="space-y-5">
 
       <div className="card">
-        <div className="flex items-start justify-between mb-5">
-          <div>
-            <h2 className="font-bold text-white text-base">Asignados</h2>
-            <p className="text-xs text-gray-500 mt-0.5">Cruce ventas - leads por JOB_SEQ, DNI y telefono</p>
-          </div>
+        <div className="flex items-start justify-between mb-4">
+          <p className="text-xs text-gray-500">Cruce ventas - leads por JOB_SEQ, DNI y telefono</p>
           <button onClick={ejecutarCruce} disabled={running} className="btn-primary">
             {running ? 'Ejecutando...' : 'Ejecutar cruce'}
           </button>
@@ -254,13 +251,7 @@ export default function Asignados() {
         )}
       </div>
 
-      <div className="info-box success">
-        <span className="info-icon">bolt</span>
-        <div>
-          <strong>Como funciona el cruce:</strong> JOB_SEQ (vinculo directo del Celer) - DNI - Telefono exacto - Ultimos 8 digitos.
-          Las columnas <strong>Canal</strong>, <strong>Campana</strong> y <strong>Match</strong> son editables.
-        </div>
-      </div>
+
 
       {runLog.length > 0 && (
         <div className="rounded-xl p-4 font-mono text-xs text-gray-300 overflow-y-auto max-h-48" style={{ background:'#0a0a0a', border:'1px solid #1f1f1f' }}>
