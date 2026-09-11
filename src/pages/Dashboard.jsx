@@ -1,124 +1,36 @@
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
-import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer, BarChart, Bar, XAxis, YAxis } from 'recharts'
 import DatePicker from '../components/DatePicker'
+import {
+  PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer,
+  LineChart, Line, XAxis, YAxis, CartesianGrid, BarChart, Bar
+} from 'recharts'
 
 const BRAND   = '#B5E000'
-const PALETTE = ['#B5E000','#8ca800','#5f7200','#d4f000','#3d5200','#a3c200','#6b8a00','#e8ff4d']
-const fmt     = n => (n||0).toLocaleString('es-AR')
-const pct     = (a,b) => b > 0 ? Math.round(a*100/b) : 0
+const PALETTE = ['#B5E000','#8ca800','#5f7200','#d4f000','#a3c200','#3d5200','#6b8a00','#e8ff4d']
+const GRAY3   = '#2a2a2a'
 
-function fixLabel(name) {
-  if (!name) return 'SIN DATO'
-  return name.replace('_',' ').toUpperCase()
-}
+const fmt    = n  => (n || 0).toLocaleString('es-AR')
+const fmtPct = (a,b) => b > 0 ? (a * 100 / b).toFixed(1) + '%' : '0%'
 
-const Tip = ({ active, payload }) => {
+const MARCAS = ['KIARA','CIARA','PEARA','MOVILIS','SALRA','HUERTAS','LAFABRICAUS','SELECCIÓN']
+const RUBROS = ['0KM','PDA','USADOS','V.E','COMPRA','POSTVENTA']
+
+const TipCustom = ({ active, payload, label }) => {
   if (!active || !payload || !payload.length) return null
   return (
-    <div style={{ background:'#1a1a1a', border:'1px solid #2a2a2a', borderRadius:8, padding:'8px 12px', fontSize:12 }}>
-      <div style={{ color:'#fff', fontWeight:'bold', marginBottom:4 }}>{payload[0].name}</div>
-      <div style={{ color: BRAND }}>{fmt(payload[0].value)} ventas</div>
-      {/* LEADS POR CAMPAÑA */}
-      <div className="card">
-        <div className="section-header">
-          <h2>Leads por campaña</h2>
-          <span className="count-badge">{campanaLeads.length} campañas activas</span>
-        </div>
-
-        {/* Filtros */}
-        <div className="filter-bar" style={{ marginBottom:16 }}>
-          <select className="input-dark" style={{ width:160 }} value={filtroMarca} onChange={e => setFiltroMarca(e.target.value)}>
-            <option value="">Marca: todas</option>
-            {[...new Set(campanaLeads.map(c => c.marca).filter(m => m !== '-'))].sort().map(m => (
-              <option key={m} value={m}>{m}</option>
-            ))}
-          </select>
-          <div className="filter-sep"/>
-          <select className="input-dark" style={{ width:160 }} value={filtroRubro} onChange={e => setFiltroRubro(e.target.value)}>
-            <option value="">Rubro: todos</option>
-            {[...new Set(campanaLeads.map(c => c.rubro).filter(r => r !== '-'))].sort().map(r => (
-              <option key={r} value={r}>{r}</option>
-            ))}
-          </select>
-          <div className="filter-sep"/>
-          <button onClick={() => { setFiltroMarca(''); setFiltroRubro('') }} className="btn-ghost text-xs">Limpiar</button>
-        </div>
-
-        {(() => {
-          const filtered = campanaLeads.filter(c =>
-            (!filtroMarca || c.marca === filtroMarca) &&
-            (!filtroRubro || c.rubro === filtroRubro)
-          )
-          const maxVentas = filtered[0] ? filtered[0].ventas : 1
-          const totalLeads = filtered.reduce((a,b) => a + b.leads, 0)
-          const totalVentas = filtered.reduce((a,b) => a + b.ventas, 0)
-          return (
-            <>
-              <div className="filter-results mb-4">
-                <span>{filtered.length}</span> campañas con <span>{fmt(totalVentas)}</span> ventas y <span>{fmt(totalLeads)}</span> leads
-                {filtroMarca && <span> - Marca: <span>{filtroMarca}</span></span>}
-                {filtroRubro && <span> - Rubro: <span>{filtroRubro}</span></span>}
-              </div>
-              <div className="overflow-x-auto rounded-lg border" style={{ borderColor:'#2a2a2a' }}>
-                <table className="dark-table">
-                  <thead>
-                    <tr>
-                      <th>Campaña</th>
-                      <th>Marca</th>
-                      <th>Rubro</th>
-                      <th>Leads</th>
-                      <th>Ventas</th>
-                      <th>% Conv.</th>
-                      <th style={{ width:160 }}>Volumen ventas</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filtered.map((c,i) => {
-                      const barW = Math.round((c.ventas / maxVentas) * 100)
-                      const pctTotal = fmt(Math.round((c.ventas / (totalVentas||1)) * 100))
-                      return (
-                        <tr key={c.codigo}>
-                          <td className="font-medium text-white text-xs">{c.nombre}</td>
-                          <td className="text-xs" style={{ color:'#9ca3af' }}>{c.marca}</td>
-                          <td>
-                            <span className="badge badge-gray" style={{ fontSize:'0.6rem' }}>{c.rubro}</span>
-                          </td>
-                          <td className="text-xs" style={{ color:'#9ca3af' }}>{fmt(c.leads)}</td>
-                          <td>
-                            <span className="font-bold text-xs" style={{ color: BRAND }}>{fmt(c.ventas)}</span>
-                          </td>
-                          <td>
-                            <span className="text-xs font-bold" style={{ color: c.leads > 0 && (c.ventas/c.leads) > 0.1 ? BRAND : '#9ca3af' }}>
-                              {c.leads > 0 ? Math.round(c.ventas*100/c.leads) : 0}%
-                            </span>
-                          </td>
-                          <td>
-                            <div className="h-2 rounded-full" style={{ background:'#1f1f1f' }}>
-                              <div className="h-2 rounded-full transition-all"
-                                style={{ width: barW + '%', background: PALETTE[i % PALETTE.length] }}/>
-                            </div>
-                          </td>
-                        </tr>
-                      )
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            </>
-          )
-        })()}
-      </div>
-
+    <div style={{ background:'#1a1a1a', border:'1px solid #2a2a2a', borderRadius:8, padding:'8px 12px', fontSize:11 }}>
+      <div style={{ color:'#fff', fontWeight:700, marginBottom:4 }}>{label}</div>
+      {payload.map((p,i) => <div key={i} style={{ color: p.color || BRAND }}>{p.name}: {fmt(p.value)}</div>)}
     </div>
   )
 }
 
-const PieLegend = ({ payload }) => (
+const PieLegendCustom = ({ payload }) => (
   <div style={{ display:'flex', flexWrap:'wrap', gap:6, justifyContent:'center', marginTop:8 }}>
-    {payload.map((p,i) => (
-      <div key={i} style={{ display:'flex', alignItems:'center', gap:4, fontSize:11 }}>
-        <div style={{ width:8, height:8, borderRadius:'50%', background: p.color, flexShrink:0 }}/>
+    {(payload||[]).map((p,i) => (
+      <div key={i} style={{ display:'flex', alignItems:'center', gap:4, fontSize:10 }}>
+        <div style={{ width:8, height:8, borderRadius:'50%', background:p.color }}/>
         <span style={{ color:'#9ca3af' }}>{p.value}</span>
       </div>
     ))}
@@ -126,422 +38,356 @@ const PieLegend = ({ payload }) => (
 )
 
 export default function Dashboard() {
-  const [desde,    setDesde]    = useState('')
-  const [hasta,    setHasta]    = useState('')
-  const [stats,    setStats]    = useState(null)
-  const [metodos,  setMetodos]  = useState([])
-  const [canales,  setCanales]  = useState([])
-  const [marcas,   setMarcas]   = useState([])
-  const [marcaDet,     setMarcaDet]     = useState([])
-  const [campanaLeads, setCampanaLeads] = useState([])
-  const [filtroMarca,  setFiltroMarca]  = useState('')
-  const [filtroRubro,  setFiltroRubro]  = useState('')
-  const [loading,  setLoading]  = useState(true)
+  const [desde,        setDesde]        = useState('')
+  const [hasta,        setHasta]        = useState('')
+  const [marcaFiltro,  setMarcaFiltro]  = useState([])
+  const [rubroFiltro,  setRubroFiltro]  = useState([])
+  const [kpis,         setKpis]         = useState(null)
+  const [porMarca,     setPorMarca]     = useState([])
+  const [historico,    setHistorico]    = useState([])
+  const [campLeads,    setCampLeads]    = useState([])
+  const [loading,      setLoading]      = useState(true)
 
-  const applyFiltro = useCallback(q => {
-    if (desde) q = q.gte('fecha', desde)
-    if (hasta) q = q.lte('fecha', hasta)
-    return q
-  }, [desde, hasta])
+  function toggleMarca(m) {
+    setMarcaFiltro(prev => prev.includes(m) ? prev.filter(x => x !== m) : [...prev, m])
+  }
+  function toggleRubro(r) {
+    setRubroFiltro(prev => prev.includes(r) ? prev.filter(x => x !== r) : [...prev, r])
+  }
 
   const load = useCallback(async () => {
     setLoading(true)
+
+    // Build venta filters
+    const applyV = q => {
+      if (desde) q = q.gte('fecha', desde)
+      if (hasta) q = q.lte('fecha', hasta)
+      if (marcaFiltro.length > 0) q = q.in('marca', marcaFiltro)
+      return q
+    }
+
+    // --- KPIs globales ---
     const [
       { count: totalVentas },
       { count: ventasConLead },
       { count: totalLeads },
       { count: totalEntregas },
     ] = await Promise.all([
-      applyFiltro(supabase.from('mkt_ventas').select('*',{count:'exact',head:true})),
-      applyFiltro(supabase.from('mkt_ventas').select('*',{count:'exact',head:true})).not('lead_id','is',null),
+      applyV(supabase.from('mkt_ventas').select('*',{count:'exact',head:true})),
+      applyV(supabase.from('mkt_ventas').select('*',{count:'exact',head:true})).not('lead_id','is',null),
       supabase.from('mkt_leads').select('*',{count:'exact',head:true}),
-      applyFiltro(supabase.from('mkt_entregas').select('*',{count:'exact',head:true})).not('venta_id','is',null),
+      applyV(supabase.from('mkt_entregas').select('*',{count:'exact',head:true})).not('venta_id','is',null),
     ])
-    setStats({ totalVentas, ventasConLead, totalLeads, totalEntregas })
+    setKpis({ totalVentas, ventasConLead, totalLeads, totalEntregas })
 
-    // Métodos de match
-    const { data: vMatch } = await applyFiltro(
-      supabase.from('mkt_ventas').select('metodo_match').not('lead_id','is',null)
-    ).limit(10000)
-    if (vMatch) {
-      const map = {}
-      vMatch.forEach(v => { if (v.metodo_match) map[v.metodo_match] = (map[v.metodo_match]||0)+1 })
-      setMetodos(Object.entries(map).sort((a,b)=>b[1]-a[1]).map(([name,value])=>({ name: fixLabel(name), value })))
-    }
+    // --- Por marca: ventas totales + con lead ---
+    const { data: vMarca } = await applyV(
+      supabase.from('mkt_ventas').select('marca,lead_id')
+    ).limit(20000)
 
-    // Canales (pie chart)
-    const { data: vCanal } = await applyFiltro(
-      supabase.from('mkt_ventas')
-        .select('mkt_leads!mkt_ventas_lead_id_fkey(canal)')
-        .not('lead_id','is',null)
-    ).limit(10000)
-    if (vCanal) {
-      const map = {}
-      vCanal.forEach(v => {
-        const c = (v.mkt_leads && v.mkt_leads.canal) ? v.mkt_leads.canal : 'Sin canal'
-        map[c] = (map[c]||0)+1
-      })
-      setCanales(Object.entries(map).sort((a,b)=>b[1]-a[1]).slice(0,8).map(([name,value])=>({ name, value })))
-    }
-
-    // Marcas con detalle de leads
-    const { data: vMarca } = await applyFiltro(supabase.from('mkt_ventas').select('marca,lead_id').not('marca','is',null))
     if (vMarca) {
       const map = {}
       vMarca.forEach(v => {
-        if (!map[v.marca]) map[v.marca] = { total:0, conLead:0 }
-        map[v.marca].total++
-        if (v.lead_id) map[v.marca].conLead++
+        const m = v.marca || 'Sin marca'
+        if (!map[m]) map[m] = { marca: m, ventas: 0, conLead: 0 }
+        map[m].ventas++
+        if (v.lead_id) map[m].conLead++
       })
-      const arr = Object.entries(map)
-        .sort((a,b) => b[1].total - a[1].total)
-        .map(([name, d]) => ({ name, total: d.total, conLead: d.conLead, sinLead: d.total - d.conLead }))
-      setMarcas(arr.map(m => ({ name: m.name, value: m.total })))
-      setMarcaDet(arr)
-    }
-
-    // Leads y ventas por campaña — solo campañas identificadas con conversiones
-    const [{ data: lCamp }, { data: campList }, { data: vCamp }] = await Promise.all([
-      supabase.from('mkt_leads').select('codigo_campana').not('codigo_campana','is',null).limit(50000),
-      supabase.from('mkt_campanas').select('codigo,nombre,marca,rubro'),
-      supabase.from('mkt_ventas').select('mkt_leads!mkt_ventas_lead_id_fkey(codigo_campana)')
-        .not('lead_id','is',null).limit(10000)
-    ])
-    if (lCamp && campList) {
-      // Mapa codigo → campaña (solo identificadas)
-      const campMap = {}
-      campList.forEach(c => { campMap[c.codigo.toLowerCase()] = c })
-
-      // Contar leads por codigo
+      // Leads por marca (via campana)
+      const { data: lMarca } = await supabase.from('mkt_leads')
+        .select('codigo_campana, mkt_campanas!mkt_leads_campana_id_fkey(marca)')
+        .not('codigo_campana','is',null).limit(50000)
       const leadsMap = {}
-      lCamp.forEach(l => {
-        const code = (l.codigo_campana || '').toLowerCase()
-        leadsMap[code] = (leadsMap[code] || 0) + 1
-      })
-
-      // Contar ventas por codigo de campaña del lead
-      const ventasMap = {}
-      if (vCamp) {
-        vCamp.forEach(v => {
-          const code = (v.mkt_leads && v.mkt_leads.codigo_campana) ? v.mkt_leads.codigo_campana.toLowerCase() : null
-          if (code) ventasMap[code] = (ventasMap[code] || 0) + 1
+      if (lMarca) {
+        lMarca.forEach(l => {
+          const m = (l.mkt_campanas && l.mkt_campanas.marca) ? l.mkt_campanas.marca : null
+          if (m) leadsMap[m] = (leadsMap[m] || 0) + 1
         })
       }
+      const arr = Object.values(map)
+        .map(r => ({ ...r, leads: leadsMap[r.marca] || 0 }))
+        .sort((a,b) => b.ventas - a.ventas)
+      setPorMarca(arr)
+    }
 
-      // Construir resultado: solo identificadas Y con ventas > 0
-      const result = []
-      Object.entries(leadsMap).forEach(([code, leads]) => {
-        const camp = campMap[code]
-        if (!camp) return // excluir no identificadas
-        const ventas = ventasMap[code] || 0
-        if (ventas === 0) return // excluir sin conversiones
-        result.push({ codigo: code, nombre: camp.nombre, marca: camp.marca, rubro: camp.rubro, leads, ventas })
+    // --- Histórico mensual ---
+    const { data: vHist } = await supabase.from('mkt_ventas')
+      .select('fecha,lead_id').not('fecha','is',null).limit(20000)
+    if (vHist) {
+      const map = {}
+      vHist.forEach(v => {
+        const mes = v.fecha.slice(0,7)
+        if (!map[mes]) map[mes] = { mes, ventas:0, conLead:0 }
+        map[mes].ventas++
+        if (v.lead_id) map[mes].conLead++
       })
+      const sorted = Object.values(map).sort((a,b) => a.mes.localeCompare(b.mes))
+      setHistorico(sorted.map(m => ({
+        ...m,
+        label: new Date(m.mes+'-15').toLocaleString('es-AR',{month:'short',year:'2-digit'})
+      })))
+    }
 
-      setCampanaLeads(result.sort((a,b) => b.ventas - a.ventas))
+    // --- Leads por campaña ---
+    const [{ data: lCamp }, { data: campList }] = await Promise.all([
+      supabase.from('mkt_leads').select('codigo_campana').not('codigo_campana','is',null).limit(50000),
+      supabase.from('mkt_campanas').select('codigo,nombre,marca,rubro')
+    ])
+    if (lCamp && campList) {
+      const campMap = {}
+      campList.forEach(c => { campMap[c.codigo.toLowerCase()] = c })
+      const lMap = {}
+      lCamp.forEach(l => { const c = (l.codigo_campana||'').toLowerCase(); lMap[c] = (lMap[c]||0)+1 })
+      const { data: vCamp } = await applyV(
+        supabase.from('mkt_ventas').select('mkt_leads!mkt_ventas_lead_id_fkey(codigo_campana)')
+      ).not('lead_id','is',null).limit(10000)
+      const vMap = {}
+      if (vCamp) vCamp.forEach(v => {
+        const c = (v.mkt_leads && v.mkt_leads.codigo_campana) ? v.mkt_leads.codigo_campana.toLowerCase() : null
+        if (c) vMap[c] = (vMap[c]||0)+1
+      })
+      const result = []
+      Object.entries(lMap).forEach(([code, leads]) => {
+        const camp = campMap[code]
+        if (!camp) return
+        const ventas = vMap[code] || 0
+        if (ventas === 0) return
+        result.push({ codigo:code, nombre:camp.nombre, marca:camp.marca, rubro:camp.rubro, leads, ventas })
+      })
+      setCampLeads(result.sort((a,b) => b.ventas - a.ventas))
     }
 
     setLoading(false)
-  }, [applyFiltro])
+  }, [desde, hasta, marcaFiltro, rubroFiltro])
 
   useEffect(() => { load() }, [load])
 
-  const sinMatch   = (stats ? stats.totalVentas : 0) - (stats ? stats.ventasConLead : 0)
-  const pctDigital = pct(stats ? stats.ventasConLead : 0, stats ? stats.totalVentas : 0)
-  const totalVent  = stats ? stats.ventasConLead : 0
+  const pctConversion = fmtPct(kpis ? kpis.ventasConLead : 0, kpis ? kpis.totalVentas : 0)
+  const pieMarcas     = porMarca.slice(0,8).map((m,i) => ({ name: m.marca, value: m.ventas, leads: m.leads }))
+  const pieMarcasL    = porMarca.filter(m => m.leads > 0).slice(0,8).map(m => ({ name: m.marca, value: m.leads }))
+  const campFiltered  = rubroFiltro.length > 0 ? campLeads.filter(c => rubroFiltro.includes(c.rubro)) : campLeads
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-4">
 
-      {/* FILTRO HORIZONTAL */}
+      {/* FILTROS */}
       <div className="card">
-        <div className="filter-bar" style={{ marginBottom:0 }}>
-          <span className="text-xs text-gray-500 flex-shrink-0">Filtrar por fecha:</span>
+        <div className="filter-bar" style={{ marginBottom:12 }}>
+          <span className="text-xs text-gray-500 flex-shrink-0">Fecha:</span>
           <div className="filter-sep"/>
-          <div className="flex items-center gap-2 flex-shrink-0">
-            <span className="text-xs text-gray-500">Desde</span>
-            <DatePicker label="Desde" value={desde} onChange={setDesde} maxDate={hasta || undefined} />
-          </div>
-          <div className="flex items-center gap-2 flex-shrink-0">
-            <span className="text-xs text-gray-500">Hasta</span>
-            <DatePicker label="Hasta" value={hasta} onChange={setHasta} minDate={desde || undefined} />
-          </div>
+          <DatePicker label="Desde" value={desde} onChange={setDesde} maxDate={hasta||undefined} />
+          <DatePicker label="Hasta" value={hasta} onChange={setHasta} minDate={desde||undefined} />
           <div className="filter-sep"/>
-          <div className="flex gap-2 flex-shrink-0">
-            {[
-              { label:'Mes actual', f:() => { const d=new Date(); const m=String(d.getMonth()+1).padStart(2,'0'); setDesde(d.getFullYear()+'-'+m+'-01'); setHasta(d.getFullYear()+'-'+m+'-31') }},
-              { label:'Trimestre', f:() => { const d=new Date(); const m=d.getMonth(); const q=Math.floor(m/3); const y=d.getFullYear(); setDesde(y+'-'+String(q*3+1).padStart(2,'0')+'-01'); setHasta(y+'-'+String(q*3+3).padStart(2,'0')+'-31') }},
-              { label:'Anio',      f:() => { const y=new Date().getFullYear(); setDesde(y+'-01-01'); setHasta(y+'-12-31') }},
-            ].map(p => (
-              <button key={p.label} onClick={p.f}
-                className="text-xs px-2.5 py-1 rounded-lg flex-shrink-0"
-                style={{ background:'#1a2e00', color: BRAND, border:'1px solid #2a3d00' }}>
-                {p.label}
-              </button>
-            ))}
-          </div>
+          <button onClick={() => { const d=new Date(),m=String(d.getMonth()+1).padStart(2,'0'); setDesde(d.getFullYear()+'-'+m+'-01'); setHasta(d.getFullYear()+'-'+m+'-31') }}
+            className="text-xs px-2.5 py-1 rounded-lg flex-shrink-0" style={{ background:'#1a2e00', color:BRAND, border:'1px solid #2a3d00' }}>Mes actual</button>
+          <button onClick={() => { const y=new Date().getFullYear(); setDesde(y+'-01-01'); setHasta(y+'-12-31') }}
+            className="text-xs px-2.5 py-1 rounded-lg flex-shrink-0" style={{ background:'#1a2e00', color:BRAND, border:'1px solid #2a3d00' }}>Año</button>
           <div className="filter-sep"/>
-          <button onClick={() => { setDesde(''); setHasta('') }} className="btn-ghost text-xs flex-shrink-0">
-            Limpiar
-          </button>
+          <button onClick={() => { setDesde(''); setHasta(''); setMarcaFiltro([]); setRubroFiltro([]) }}
+            className="btn-ghost text-xs flex-shrink-0">Limpiar todo</button>
         </div>
-        {(desde || hasta) && (
-          <div className="text-xs mt-2" style={{ color:'#6b7280' }}>
-            {desde ? 'Desde: ' + desde.split('-').reverse().join('/') : ''}
-            {desde && hasta ? '  -  ' : ''}
-            {hasta ? 'Hasta: ' + hasta.split('-').reverse().join('/') : ''}
+
+        {/* Filtro marca */}
+        <div className="mb-3">
+          <div className="text-xs text-gray-600 uppercase font-bold mb-2" style={{ letterSpacing:'0.08em' }}>Marca</div>
+          <div className="flex flex-wrap gap-2">
+            {MARCAS.map(m => (
+              <button key={m} onClick={() => toggleMarca(m)}
+                className="text-xs px-3 py-1 rounded-lg font-medium transition-all"
+                style={{
+                  background: marcaFiltro.includes(m) ? BRAND : '#1a1a1a',
+                  color:      marcaFiltro.includes(m) ? '#000' : '#6b7280',
+                  border:    `1px solid ${marcaFiltro.includes(m) ? BRAND : GRAY3}`
+                }}>{m}</button>
+            ))}
+            {marcaFiltro.length > 0 && (
+              <button onClick={() => setMarcaFiltro([])} className="text-xs text-gray-600 hover:text-gray-300">Todas</button>
+            )}
           </div>
-        )}
+        </div>
+
+        {/* Filtro rubro */}
+        <div>
+          <div className="text-xs text-gray-600 uppercase font-bold mb-2" style={{ letterSpacing:'0.08em' }}>Rubro</div>
+          <div className="flex flex-wrap gap-2">
+            {RUBROS.map(r => (
+              <button key={r} onClick={() => toggleRubro(r)}
+                className="text-xs px-3 py-1 rounded-lg font-medium transition-all"
+                style={{
+                  background: rubroFiltro.includes(r) ? BRAND : '#1a1a1a',
+                  color:      rubroFiltro.includes(r) ? '#000' : '#6b7280',
+                  border:    `1px solid ${rubroFiltro.includes(r) ? BRAND : GRAY3}`
+                }}>{r}</button>
+            ))}
+            {rubroFiltro.length > 0 && (
+              <button onClick={() => setRubroFiltro([])} className="text-xs text-gray-600 hover:text-gray-300">Todos</button>
+            )}
+          </div>
+        </div>
       </div>
 
       {/* KPIs */}
       <div className="grid grid-cols-4 gap-3">
         {[
-          { label:'Total ventas',       value: fmt(stats ? stats.totalVentas : 0),    sub:'en el periodo' },
-          { label:'Con lead digital',   value: fmt(stats ? stats.ventasConLead : 0),  sub: pctDigital + '% del total', accent:true },
-          { label:'Sin lead digital',   value: fmt(sinMatch),                          sub:'otro origen' },
-          { label:'Entregas vinculadas',value: fmt(stats ? stats.totalEntregas : 0),  sub:'PV con entrega' },
+          { label:'LEADS',          value: fmt(kpis ? kpis.totalLeads    : 0), sub:'consultas digitales' },
+          { label:'VENTAS',         value: fmt(kpis ? kpis.totalVentas   : 0), sub:'preventas cargadas', accent:true },
+          { label:'CON LEAD',       value: fmt(kpis ? kpis.ventasConLead : 0), sub:'origen identificado', accent:true },
+          { label:'CONVERSIÓN',     value: pctConversion,                       sub:'ventas / total preventas' },
         ].map(k => (
-          <div key={k.label} className="rounded-xl p-4 border" style={{ background: k.accent ? '#1a2e00' : '#111', borderColor: k.accent ? BRAND : '#2a2a2a' }}>
-            <div className="text-2xl font-black" style={{ color: k.accent ? BRAND : '#fff' }}>{loading ? '-' : k.value}</div>
-            <div className="text-xs font-bold uppercase mt-1" style={{ color: k.accent ? BRAND : '#4b5563' }}>{k.label}</div>
+          <div key={k.label} className="rounded-xl p-4 border" style={{ background: k.accent ? '#1a2e00' : '#111', borderColor: k.accent ? BRAND : GRAY3 }}>
+            <div className="text-2xl font-black" style={{ color: k.accent ? BRAND : '#fff' }}>{loading ? '—' : k.value}</div>
+            <div className="text-xs font-black uppercase mt-1 tracking-widest" style={{ color: k.accent ? BRAND : '#4b5563' }}>{k.label}</div>
             <div className="text-xs mt-0.5" style={{ color:'#374151' }}>{k.sub}</div>
           </div>
         ))}
       </div>
 
-      {/* GRAFICOS FILA 1: Metodos + Canal grande */}
-      <div className="grid gap-4" style={{ gridTemplateColumns:'1fr 2fr' }}>
+      {/* TABLA POR MARCA + TORTAS */}
+      <div className="grid gap-4" style={{ gridTemplateColumns:'1.2fr 1fr 1fr' }}>
 
-        {/* Como se vincularon */}
+        {/* Tabla por marca */}
         <div className="card">
-          <div className="section-header">
-            <h2>Como se vincularon</h2>
-            <span className="count-badge">{fmt(totalVent)} ventas</span>
-          </div>
-          <div className="space-y-3 mt-2">
-            {metodos.map((m,i) => {
-              const p = pct(m.value, totalVent)
-              return (
-                <div key={m.name}>
-                  <div className="flex justify-between text-xs mb-1">
-                    <span className="font-bold" style={{ color: BRAND }}>{m.name}</span>
-                    <span style={{ color:'#9ca3af' }}>{fmt(m.value)} <span style={{ color:'#4b5563' }}>({p}%)</span></span>
-                  </div>
-                  <div className="h-2 rounded-full" style={{ background:'#2a2a2a' }}>
-                    <div className="h-2 rounded-full" style={{ width: p + '%', background: PALETTE[i % PALETTE.length] }}/>
-                  </div>
-                </div>
-              )
-            })}
-            {!loading && metodos.length === 0 && (
-              <p className="text-xs" style={{ color:'#4b5563' }}>Sin datos. Ejecuta el cruce en Asignados.</p>
-            )}
-          </div>
-        </div>
-
-        {/* Canal de captacion - Torta grande */}
-        <div className="card">
-          <div className="section-header">
-            <h2>Canal de captacion</h2>
-            <span className="count-badge">{fmt(totalVent)} ventas digitales</span>
-          </div>
-          {canales.length > 0 ? (
-            <ResponsiveContainer width="100%" height={300}>
-              <PieChart>
-                <Pie
-                  data={canales}
-                  cx="50%"
-                  cy="50%"
-                  outerRadius={110}
-                  innerRadius={40}
-                  dataKey="value"
-                  nameKey="name"
-                  paddingAngle={2}>
-                  {canales.map((_, i) => (
-                    <Cell key={i} fill={PALETTE[i % PALETTE.length]} />
-                  ))}
-                </Pie>
-                <Tooltip content={<Tip />} />
-                <Legend content={<PieLegend />} />
-              </PieChart>
-            </ResponsiveContainer>
-          ) : (
-            <div className="flex items-center justify-center h-48">
-              <p className="text-xs" style={{ color:'#4b5563' }}>Sin datos de canal disponibles.</p>
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* GRAFICOS FILA 2: Marcas + Tabla */}
-      <div className="grid grid-cols-2 gap-4">
-
-        {/* Barras horizontales por marca con leads vs sin leads */}
-        <div className="card">
-          <div className="section-header">
-            <h2>Ventas por marca</h2>
-          </div>
-          <div className="flex gap-4 mb-3">
-            <div className="flex items-center gap-1.5 text-xs" style={{ color:'#9ca3af' }}>
-              <div style={{ width:10, height:10, borderRadius:2, background: BRAND }}/>
-              Con lead
-            </div>
-            <div className="flex items-center gap-1.5 text-xs" style={{ color:'#9ca3af' }}>
-              <div style={{ width:10, height:10, borderRadius:2, background:'#2a2a2a' }}/>
-              Sin lead
-            </div>
-          </div>
-          {marcaDet.length > 0 ? (
-            <ResponsiveContainer width="100%" height={Math.max(180, marcaDet.length * 48)}>
-              <BarChart data={marcaDet} layout="vertical" margin={{ left:8, right:24, top:0, bottom:0 }}>
-                <XAxis type="number" hide />
-                <YAxis type="category" dataKey="name" width={80} tick={{ fill:'#9ca3af', fontSize:11, fontWeight:'bold' }} />
-                <Tooltip content={({ active, payload, label }) => {
-                  if (!active || !payload || !payload.length) return null
-                  const total = payload.reduce((a,b) => a + (b.value||0), 0)
-                  return (
-                    <div style={{ background:'#1a1a1a', border:'1px solid #2a2a2a', borderRadius:8, padding:'8px 12px', fontSize:12 }}>
-                      <div style={{ color:'#fff', fontWeight:'bold', marginBottom:4 }}>{label}</div>
-                      {payload.map((p,i) => <div key={i} style={{ color: p.fill === BRAND ? BRAND : '#6b7280' }}>{p.name}: {fmt(p.value)}</div>)}
-                      <div style={{ color:'#4b5563', marginTop:4, borderTop:'1px solid #2a2a2a', paddingTop:4 }}>Total: {fmt(total)}</div>
-                    </div>
-                  )
-                }} cursor={{ fill:'#ffffff05' }} />
-                <Bar dataKey="conLead" name="Con lead" stackId="a" fill={BRAND} radius={[0,0,0,0]} />
-                <Bar dataKey="sinLead" name="Sin lead"  stackId="a" fill="#2a3d00" radius={[0,4,4,0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          ) : (
-            <div className="flex items-center justify-center h-32">
-              <p className="text-xs" style={{ color:'#4b5563' }}>Sin datos.</p>
-            </div>
-          )}
-        </div>
-
-        {/* Tabla resumen */}
-        <div className="card">
-          <div className="section-header"><h2>Resumen canal</h2></div>
-          <div className="overflow-x-auto rounded-lg border" style={{ borderColor:'#2a2a2a' }}>
+          <div className="section-header"><h2>Por marca</h2></div>
+          <div className="overflow-x-auto rounded-lg border" style={{ borderColor: GRAY3 }}>
             <table className="dark-table">
               <thead>
                 <tr>
-                  <th>Canal</th>
+                  <th>Marca</th>
+                  <th>Leads</th>
                   <th>Ventas</th>
-                  <th>%</th>
+                  <th>Con lead</th>
+                  <th>Conv.</th>
                 </tr>
               </thead>
               <tbody>
-                {canales.map((c,i) => {
-                  const p = pct(c.value, totalVent)
-                  return (
-                    <tr key={c.name}>
-                      <td>
-                        <div className="flex items-center gap-2">
-                          <div style={{ width:8, height:8, borderRadius:'50%', background: PALETTE[i % PALETTE.length], flexShrink:0 }}/>
-                          <span className="text-white text-xs">{c.name}</span>
-                        </div>
-                      </td>
-                      <td className="font-bold text-xs" style={{ color: BRAND }}>{fmt(c.value)}</td>
-                      <td className="text-xs" style={{ color:'#6b7280' }}>{p}%</td>
-                    </tr>
-                  )
-                })}
+                {porMarca.map(m => (
+                  <tr key={m.marca}>
+                    <td className="font-bold text-white text-xs">{m.marca}</td>
+                    <td className="text-xs" style={{ color:'#9ca3af' }}>{fmt(m.leads)}</td>
+                    <td className="text-xs font-bold" style={{ color: BRAND }}>{fmt(m.ventas)}</td>
+                    <td className="text-xs" style={{ color: BRAND }}>{fmt(m.conLead)}</td>
+                    <td className="text-xs font-bold" style={{ color: m.ventas > 0 && m.conLead/m.ventas > 0.4 ? BRAND : '#6b7280' }}>
+                      {fmtPct(m.conLead, m.ventas)}
+                    </td>
+                  </tr>
+                ))}
+                {porMarca.length > 0 && (
+                  <tr style={{ borderTop:'1px solid #2a2a2a', background:'#0a0a0a' }}>
+                    <td className="text-xs font-black text-white">TOTAL</td>
+                    <td className="text-xs font-bold" style={{ color:'#9ca3af' }}>{fmt(porMarca.reduce((a,b)=>a+b.leads,0))}</td>
+                    <td className="text-xs font-black" style={{ color: BRAND }}>{fmt(porMarca.reduce((a,b)=>a+b.ventas,0))}</td>
+                    <td className="text-xs font-black" style={{ color: BRAND }}>{fmt(porMarca.reduce((a,b)=>a+b.conLead,0))}</td>
+                    <td className="text-xs font-black" style={{ color: BRAND }}>
+                      {fmtPct(porMarca.reduce((a,b)=>a+b.conLead,0), porMarca.reduce((a,b)=>a+b.ventas,0))}
+                    </td>
+                  </tr>
+                )}
               </tbody>
             </table>
           </div>
         </div>
+
+        {/* Torta Ventas */}
+        <div className="card">
+          <div className="section-header"><h2>Ventas por marca</h2></div>
+          <ResponsiveContainer width="100%" height={220}>
+            <PieChart>
+              <Pie data={pieMarcas} cx="50%" cy="50%" outerRadius={80} innerRadius={35}
+                dataKey="value" nameKey="name" paddingAngle={2}>
+                {pieMarcas.map((_,i) => <Cell key={i} fill={PALETTE[i%PALETTE.length]} />)}
+              </Pie>
+              <Tooltip content={<TipCustom />} />
+              <Legend content={<PieLegendCustom />} />
+            </PieChart>
+          </ResponsiveContainer>
+        </div>
+
+        {/* Conversión por marca — barras */}
+        <div className="card">
+          <div className="section-header"><h2>Conversión por marca</h2></div>
+          <div className="space-y-2 mt-1">
+            {porMarca.filter(m => m.ventas > 0).map((m,i) => {
+              const p = m.ventas > 0 ? (m.conLead/m.ventas*100).toFixed(1) : 0
+              return (
+                <div key={m.marca}>
+                  <div className="flex justify-between text-xs mb-1">
+                    <span className="font-medium text-white">{m.marca}</span>
+                    <span style={{ color: BRAND, fontWeight:700 }}>{p}%</span>
+                  </div>
+                  <div className="h-2 rounded-full" style={{ background:'#1f1f1f' }}>
+                    <div className="h-2 rounded-full" style={{ width: p+'%', background: PALETTE[i%PALETTE.length] }}/>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
       </div>
 
-      {/* LEADS POR CAMPAÑA */}
+      {/* HISTÓRICO */}
+      <div className="card">
+        <div className="section-header">
+          <h2>Histórico mensual — Leads vs Ventas</h2>
+        </div>
+        <ResponsiveContainer width="100%" height={220}>
+          <LineChart data={historico} margin={{ left:0, right:16, top:8, bottom:0 }}>
+            <CartesianGrid stroke="#1f1f1f" strokeDasharray="3 3" />
+            <XAxis dataKey="label" tick={{ fill:'#6b7280', fontSize:10 }} />
+            <YAxis tick={{ fill:'#6b7280', fontSize:10 }} />
+            <Tooltip content={<TipCustom />} />
+            <Legend wrapperStyle={{ fontSize:11, color:'#9ca3af' }} />
+            <Line type="monotone" dataKey="ventas"  name="Ventas"       stroke={BRAND}    strokeWidth={2} dot={{ fill: BRAND, r:3 }} />
+            <Line type="monotone" dataKey="conLead" name="Con lead"     stroke="#5f7200"  strokeWidth={2} dot={{ fill:'#5f7200', r:3 }} />
+          </LineChart>
+        </ResponsiveContainer>
+      </div>
+
+      {/* TABLA CAMPAÑAS */}
       <div className="card">
         <div className="section-header">
           <h2>Leads por campaña</h2>
-          <span className="count-badge">{campanaLeads.length} campañas activas</span>
+          <span className="count-badge">{campFiltered.length} campañas con conversiones</span>
         </div>
-
-        {/* Filtros */}
-        <div className="filter-bar" style={{ marginBottom:16 }}>
-          <select className="input-dark" style={{ width:160 }} value={filtroMarca} onChange={e => setFiltroMarca(e.target.value)}>
-            <option value="">Marca: todas</option>
-            {[...new Set(campanaLeads.map(c => c.marca).filter(m => m !== '-'))].sort().map(m => (
-              <option key={m} value={m}>{m}</option>
-            ))}
-          </select>
-          <div className="filter-sep"/>
-          <select className="input-dark" style={{ width:160 }} value={filtroRubro} onChange={e => setFiltroRubro(e.target.value)}>
-            <option value="">Rubro: todos</option>
-            {[...new Set(campanaLeads.map(c => c.rubro).filter(r => r !== '-'))].sort().map(r => (
-              <option key={r} value={r}>{r}</option>
-            ))}
-          </select>
-          <div className="filter-sep"/>
-          <button onClick={() => { setFiltroMarca(''); setFiltroRubro('') }} className="btn-ghost text-xs">Limpiar</button>
+        <div className="filter-results mb-3">
+          {campFiltered.length} campañas con <span>{fmt(campFiltered.reduce((a,b)=>a+b.ventas,0))}</span> ventas y <span>{fmt(campFiltered.reduce((a,b)=>a+b.leads,0))}</span> leads
         </div>
-
-        {(() => {
-          const filtered = campanaLeads.filter(c =>
-            (!filtroMarca || c.marca === filtroMarca) &&
-            (!filtroRubro || c.rubro === filtroRubro)
-          )
-          const maxVentas = filtered[0] ? filtered[0].ventas : 1
-          const totalLeads = filtered.reduce((a,b) => a + b.leads, 0)
-          const totalVentas = filtered.reduce((a,b) => a + b.ventas, 0)
-          return (
-            <>
-              <div className="filter-results mb-4">
-                <span>{filtered.length}</span> campañas con <span>{fmt(totalVentas)}</span> ventas y <span>{fmt(totalLeads)}</span> leads
-                {filtroMarca && <span> - Marca: <span>{filtroMarca}</span></span>}
-                {filtroRubro && <span> - Rubro: <span>{filtroRubro}</span></span>}
-              </div>
-              <div className="overflow-x-auto rounded-lg border" style={{ borderColor:'#2a2a2a' }}>
-                <table className="dark-table">
-                  <thead>
-                    <tr>
-                      <th>Campaña</th>
-                      <th>Marca</th>
-                      <th>Rubro</th>
-                      <th>Leads</th>
-                      <th>Ventas</th>
-                      <th>% Conv.</th>
-                      <th style={{ width:160 }}>Volumen ventas</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filtered.map((c,i) => {
-                      const barW = Math.round((c.ventas / maxVentas) * 100)
-                      const pctTotal = fmt(Math.round((c.ventas / (totalVentas||1)) * 100))
-                      return (
-                        <tr key={c.codigo}>
-                          <td className="font-medium text-white text-xs">{c.nombre}</td>
-                          <td className="text-xs" style={{ color:'#9ca3af' }}>{c.marca}</td>
-                          <td>
-                            <span className="badge badge-gray" style={{ fontSize:'0.6rem' }}>{c.rubro}</span>
-                          </td>
-                          <td className="text-xs" style={{ color:'#9ca3af' }}>{fmt(c.leads)}</td>
-                          <td>
-                            <span className="font-bold text-xs" style={{ color: BRAND }}>{fmt(c.ventas)}</span>
-                          </td>
-                          <td>
-                            <span className="text-xs font-bold" style={{ color: c.leads > 0 && (c.ventas/c.leads) > 0.1 ? BRAND : '#9ca3af' }}>
-                              {c.leads > 0 ? Math.round(c.ventas*100/c.leads) : 0}%
-                            </span>
-                          </td>
-                          <td>
-                            <div className="h-2 rounded-full" style={{ background:'#1f1f1f' }}>
-                              <div className="h-2 rounded-full transition-all"
-                                style={{ width: barW + '%', background: PALETTE[i % PALETTE.length] }}/>
-                            </div>
-                          </td>
-                        </tr>
-                      )
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            </>
-          )
-        })()}
+        <div className="overflow-x-auto rounded-lg border" style={{ borderColor: GRAY3 }}>
+          <table className="dark-table">
+            <thead>
+              <tr>
+                <th>Campaña</th>
+                <th>Marca</th>
+                <th>Rubro</th>
+                <th>Leads</th>
+                <th>Ventas</th>
+                <th>% Conv.</th>
+                <th style={{ width:140 }}>Volumen</th>
+              </tr>
+            </thead>
+            <tbody>
+              {campFiltered.map((c,i) => {
+                const maxV  = campFiltered[0] ? campFiltered[0].ventas : 1
+                const p     = c.leads > 0 ? Math.round(c.ventas*100/c.leads) : 0
+                const barW  = Math.round(c.ventas*100/maxV)
+                return (
+                  <tr key={c.codigo}>
+                    <td className="font-medium text-white text-xs">{c.nombre}</td>
+                    <td className="text-xs" style={{ color:'#9ca3af' }}>{c.marca}</td>
+                    <td><span className="badge badge-gray" style={{ fontSize:'0.6rem' }}>{c.rubro}</span></td>
+                    <td className="text-xs" style={{ color:'#9ca3af' }}>{fmt(c.leads)}</td>
+                    <td className="font-bold text-xs" style={{ color: BRAND }}>{fmt(c.ventas)}</td>
+                    <td className="font-bold text-xs" style={{ color: p > 10 ? BRAND : '#9ca3af' }}>{p}%</td>
+                    <td>
+                      <div className="h-2 rounded-full" style={{ background:'#1f1f1f' }}>
+                        <div className="h-2 rounded-full" style={{ width:barW+'%', background: PALETTE[i%PALETTE.length] }}/>
+                      </div>
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
       </div>
 
     </div>
