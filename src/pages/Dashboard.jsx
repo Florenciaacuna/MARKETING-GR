@@ -18,6 +18,96 @@ const Tip = ({ active, payload }) => {
     <div style={{ background:'#1a1a1a', border:'1px solid #2a2a2a', borderRadius:8, padding:'8px 12px', fontSize:12 }}>
       <div style={{ color:'#fff', fontWeight:'bold', marginBottom:4 }}>{payload[0].name}</div>
       <div style={{ color: BRAND }}>{fmt(payload[0].value)} ventas</div>
+      {/* LEADS POR CAMPAÑA */}
+      <div className="card">
+        <div className="section-header">
+          <h2>Leads por campaña</h2>
+          <span className="count-badge">{campanaLeads.length} campañas activas</span>
+        </div>
+
+        {/* Filtros */}
+        <div className="filter-bar" style={{ marginBottom:16 }}>
+          <select className="input-dark" style={{ width:160 }} value={filtroMarca} onChange={e => setFiltroMarca(e.target.value)}>
+            <option value="">Marca: todas</option>
+            {[...new Set(campanaLeads.map(c => c.marca).filter(m => m !== '-'))].sort().map(m => (
+              <option key={m} value={m}>{m}</option>
+            ))}
+          </select>
+          <div className="filter-sep"/>
+          <select className="input-dark" style={{ width:160 }} value={filtroRubro} onChange={e => setFiltroRubro(e.target.value)}>
+            <option value="">Rubro: todos</option>
+            {[...new Set(campanaLeads.map(c => c.rubro).filter(r => r !== '-'))].sort().map(r => (
+              <option key={r} value={r}>{r}</option>
+            ))}
+          </select>
+          <div className="filter-sep"/>
+          <button onClick={() => { setFiltroMarca(''); setFiltroRubro('') }} className="btn-ghost text-xs">Limpiar</button>
+        </div>
+
+        {(() => {
+          const filtered = campanaLeads.filter(c =>
+            (!filtroMarca || c.marca === filtroMarca) &&
+            (!filtroRubro || c.rubro === filtroRubro)
+          )
+          const maxLeads = filtered[0] ? filtered[0].leads : 1
+          const totalLeads = filtered.reduce((a,b) => a + b.leads, 0)
+          return (
+            <>
+              <div className="filter-results mb-4">
+                <span>{filtered.length}</span> campañas con <span>{fmt(totalLeads)}</span> leads en total
+                {filtroMarca && <span> - Marca: <span>{filtroMarca}</span></span>}
+                {filtroRubro && <span> - Rubro: <span>{filtroRubro}</span></span>}
+              </div>
+              <div className="overflow-x-auto rounded-lg border" style={{ borderColor:'#2a2a2a' }}>
+                <table className="dark-table">
+                  <thead>
+                    <tr>
+                      <th>Código</th>
+                      <th>Campaña</th>
+                      <th>Marca</th>
+                      <th>Rubro</th>
+                      <th>Leads</th>
+                      <th style={{ width:200 }}>Volumen</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filtered.map((c,i) => {
+                      const barW = Math.round((c.leads / maxLeads) * 100)
+                      const pctTotal = fmt(Math.round((c.leads / totalLeads) * 100))
+                      return (
+                        <tr key={c.codigo}>
+                          <td>
+                            <span className="font-mono text-xs px-1.5 py-0.5 rounded"
+                              style={{ background:'#1a2e00', color: BRAND }}>
+                              [{c.codigo}]
+                            </span>
+                          </td>
+                          <td className="font-medium text-white text-xs">{c.nombre}</td>
+                          <td className="text-xs" style={{ color:'#9ca3af' }}>{c.marca}</td>
+                          <td>
+                            <span className="badge badge-gray" style={{ fontSize:'0.6rem' }}>{c.rubro}</span>
+                          </td>
+                          <td>
+                            <span className="font-bold text-xs" style={{ color: BRAND }}>{fmt(c.leads)}</span>
+                            <span className="text-xs ml-1" style={{ color:'#4b5563' }}>({pctTotal}%)</span>
+                          </td>
+                          <td>
+                            <div className="h-2 rounded-full" style={{ background:'#1f1f1f' }}>
+                              <div className="h-2 rounded-full transition-all"
+                                style={{ width: barW + '%', background: PALETTE[i % PALETTE.length] }}/>
+                            </div>
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )
+        })()}
+      </div>
+
     </div>
   )
 }
@@ -40,7 +130,10 @@ export default function Dashboard() {
   const [metodos,  setMetodos]  = useState([])
   const [canales,  setCanales]  = useState([])
   const [marcas,   setMarcas]   = useState([])
-  const [marcaDet, setMarcaDet] = useState([])
+  const [marcaDet,     setMarcaDet]     = useState([])
+  const [campanaLeads, setCampanaLeads] = useState([])
+  const [filtroMarca,  setFiltroMarca]  = useState('')
+  const [filtroRubro,  setFiltroRubro]  = useState('')
   const [loading,  setLoading]  = useState(true)
 
   const applyFiltro = useCallback(q => {
@@ -103,6 +196,27 @@ export default function Dashboard() {
         .map(([name, d]) => ({ name, total: d.total, conLead: d.conLead, sinLead: d.total - d.conLead }))
       setMarcas(arr.map(m => ({ name: m.name, value: m.total })))
       setMarcaDet(arr)
+    }
+
+    // Leads por campaña
+    const { data: lCamp } = await supabase.from('mkt_leads')
+      .select('codigo_campana, mkt_campanas!mkt_leads_campana_id_fkey(nombre,marca,rubro)')
+      .not('codigo_campana','is',null)
+      .limit(50000)
+    if (lCamp) {
+      const map = {}
+      lCamp.forEach(l => {
+        const code = l.codigo_campana
+        if (!map[code]) map[code] = {
+          codigo: code,
+          nombre: (l.mkt_campanas && l.mkt_campanas.nombre) ? l.mkt_campanas.nombre : code,
+          marca:  (l.mkt_campanas && l.mkt_campanas.marca)  ? l.mkt_campanas.marca  : '-',
+          rubro:  (l.mkt_campanas && l.mkt_campanas.rubro)  ? l.mkt_campanas.rubro  : '-',
+          leads: 0
+        }
+        map[code].leads++
+      })
+      setCampanaLeads(Object.values(map).sort((a,b) => b.leads - a.leads))
     }
 
     setLoading(false)
@@ -317,6 +431,96 @@ export default function Dashboard() {
             </table>
           </div>
         </div>
+      </div>
+
+      {/* LEADS POR CAMPAÑA */}
+      <div className="card">
+        <div className="section-header">
+          <h2>Leads por campaña</h2>
+          <span className="count-badge">{campanaLeads.length} campañas activas</span>
+        </div>
+
+        {/* Filtros */}
+        <div className="filter-bar" style={{ marginBottom:16 }}>
+          <select className="input-dark" style={{ width:160 }} value={filtroMarca} onChange={e => setFiltroMarca(e.target.value)}>
+            <option value="">Marca: todas</option>
+            {[...new Set(campanaLeads.map(c => c.marca).filter(m => m !== '-'))].sort().map(m => (
+              <option key={m} value={m}>{m}</option>
+            ))}
+          </select>
+          <div className="filter-sep"/>
+          <select className="input-dark" style={{ width:160 }} value={filtroRubro} onChange={e => setFiltroRubro(e.target.value)}>
+            <option value="">Rubro: todos</option>
+            {[...new Set(campanaLeads.map(c => c.rubro).filter(r => r !== '-'))].sort().map(r => (
+              <option key={r} value={r}>{r}</option>
+            ))}
+          </select>
+          <div className="filter-sep"/>
+          <button onClick={() => { setFiltroMarca(''); setFiltroRubro('') }} className="btn-ghost text-xs">Limpiar</button>
+        </div>
+
+        {(() => {
+          const filtered = campanaLeads.filter(c =>
+            (!filtroMarca || c.marca === filtroMarca) &&
+            (!filtroRubro || c.rubro === filtroRubro)
+          )
+          const maxLeads = filtered[0] ? filtered[0].leads : 1
+          const totalLeads = filtered.reduce((a,b) => a + b.leads, 0)
+          return (
+            <>
+              <div className="filter-results mb-4">
+                <span>{filtered.length}</span> campañas con <span>{fmt(totalLeads)}</span> leads en total
+                {filtroMarca && <span> - Marca: <span>{filtroMarca}</span></span>}
+                {filtroRubro && <span> - Rubro: <span>{filtroRubro}</span></span>}
+              </div>
+              <div className="overflow-x-auto rounded-lg border" style={{ borderColor:'#2a2a2a' }}>
+                <table className="dark-table">
+                  <thead>
+                    <tr>
+                      <th>Código</th>
+                      <th>Campaña</th>
+                      <th>Marca</th>
+                      <th>Rubro</th>
+                      <th>Leads</th>
+                      <th style={{ width:200 }}>Volumen</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filtered.map((c,i) => {
+                      const barW = Math.round((c.leads / maxLeads) * 100)
+                      const pctTotal = fmt(Math.round((c.leads / totalLeads) * 100))
+                      return (
+                        <tr key={c.codigo}>
+                          <td>
+                            <span className="font-mono text-xs px-1.5 py-0.5 rounded"
+                              style={{ background:'#1a2e00', color: BRAND }}>
+                              [{c.codigo}]
+                            </span>
+                          </td>
+                          <td className="font-medium text-white text-xs">{c.nombre}</td>
+                          <td className="text-xs" style={{ color:'#9ca3af' }}>{c.marca}</td>
+                          <td>
+                            <span className="badge badge-gray" style={{ fontSize:'0.6rem' }}>{c.rubro}</span>
+                          </td>
+                          <td>
+                            <span className="font-bold text-xs" style={{ color: BRAND }}>{fmt(c.leads)}</span>
+                            <span className="text-xs ml-1" style={{ color:'#4b5563' }}>({pctTotal}%)</span>
+                          </td>
+                          <td>
+                            <div className="h-2 rounded-full" style={{ background:'#1f1f1f' }}>
+                              <div className="h-2 rounded-full transition-all"
+                                style={{ width: barW + '%', background: PALETTE[i % PALETTE.length] }}/>
+                            </div>
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )
+        })()}
       </div>
 
     </div>
