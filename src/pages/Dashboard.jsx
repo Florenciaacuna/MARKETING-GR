@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
 import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer, BarChart, Bar, XAxis, YAxis } from 'recharts'
+import DatePicker from '../components/DatePicker'
 
 const BRAND   = '#B5E000'
 const PALETTE = ['#B5E000','#8ca800','#5f7200','#d4f000','#3d5200','#a3c200','#6b8a00','#e8ff4d']
@@ -259,13 +260,11 @@ export default function Dashboard() {
           <div className="filter-sep"/>
           <div className="flex items-center gap-2 flex-shrink-0">
             <span className="text-xs text-gray-500">Desde</span>
-            <input type="date" className="input-dark" style={{ width:150 }}
-              value={desde} onChange={e => setDesde(e.target.value)} />
+            <DatePicker label="Desde" value={desde} onChange={setDesde} maxDate={hasta || undefined} />
           </div>
           <div className="flex items-center gap-2 flex-shrink-0">
             <span className="text-xs text-gray-500">Hasta</span>
-            <input type="date" className="input-dark" style={{ width:150 }}
-              value={hasta} onChange={e => setHasta(e.target.value)} />
+            <DatePicker label="Hasta" value={hasta} onChange={setHasta} minDate={desde || undefined} />
           </div>
           <div className="filter-sep"/>
           <div className="flex gap-2 flex-shrink-0">
