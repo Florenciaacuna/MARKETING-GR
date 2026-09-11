@@ -63,7 +63,6 @@ const Tip = ({ active, payload }) => {
                 <table className="dark-table">
                   <thead>
                     <tr>
-                      <th>Código</th>
                       <th>Campaña</th>
                       <th>Marca</th>
                       <th>Rubro</th>
@@ -79,12 +78,6 @@ const Tip = ({ active, payload }) => {
                       const pctTotal = fmt(Math.round((c.ventas / (totalVentas||1)) * 100))
                       return (
                         <tr key={c.codigo}>
-                          <td>
-                            <span className="font-mono text-xs px-1.5 py-0.5 rounded"
-                              style={{ background:'#1a2e00', color: BRAND }}>
-                              [{c.codigo}]
-                            </span>
-                          </td>
                           <td className="font-medium text-white text-xs">{c.nombre}</td>
                           <td className="text-xs" style={{ color:'#9ca3af' }}>{c.marca}</td>
                           <td>
@@ -506,7 +499,6 @@ export default function Dashboard() {
                 <table className="dark-table">
                   <thead>
                     <tr>
-                      <th>Código</th>
                       <th>Campaña</th>
                       <th>Marca</th>
                       <th>Rubro</th>
@@ -522,12 +514,6 @@ export default function Dashboard() {
                       const pctTotal = fmt(Math.round((c.ventas / (totalVentas||1)) * 100))
                       return (
                         <tr key={c.codigo}>
-                          <td>
-                            <span className="font-mono text-xs px-1.5 py-0.5 rounded"
-                              style={{ background:'#1a2e00', color: BRAND }}>
-                              [{c.codigo}]
-                            </span>
-                          </td>
                           <td className="font-medium text-white text-xs">{c.nombre}</td>
                           <td className="text-xs" style={{ color:'#9ca3af' }}>{c.marca}</td>
                           <td>
