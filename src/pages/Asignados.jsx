@@ -324,7 +324,8 @@ export default function Asignados() {
                 <th>PV</th>
                 <th>Fecha</th>
                 <th>Tipo</th>
-                <th>Cliente / DNI</th>
+                <th>Cliente</th>
+                <th>DNI</th>
                 <th>Vendedor</th>
                 <th>Marca</th>
                 {tab === 'digital' && (
@@ -361,11 +362,9 @@ export default function Asignados() {
                     <td className="font-mono text-xs" style={{ color: BRAND, whiteSpace:'nowrap' }}>{v.pv_solicitud || '-'}</td>
                     <td className="text-gray-500 text-xs whitespace-nowrap">{fmtDate(v.fecha)}</td>
                     <td>{v.tipo ? <span className="badge badge-blue" style={{fontSize:'0.6rem'}}>{v.tipo}</span> : '-'}</td>
-                    <td>
-                      <div className="font-medium text-white text-xs">{v.nombre || '-'}</div>
-                      <div className="font-mono text-gray-600" style={{fontSize:'0.6rem'}}>{v.dni || ''}</div>
-                    </td>
-                    <td className="text-gray-400 text-xs">{v.vendedor ? v.vendedor.split(' ')[0] : '-'}</td>
+                    <td className="font-medium text-white text-xs">{v.nombre || '-'}</td>
+                    <td className="font-mono text-xs text-gray-400">{v.dni || '-'}</td>
+                    <td className="text-gray-400 text-xs">{v.vendedor || '-'}</td>
                     <td>{v.marca ? <span className="badge badge-gray" style={{fontSize:'0.6rem'}}>{v.marca}</span> : '-'}</td>
 
                     {tab === 'digital' && (
