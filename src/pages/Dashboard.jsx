@@ -49,12 +49,13 @@ const Tip = ({ active, payload }) => {
             (!filtroMarca || c.marca === filtroMarca) &&
             (!filtroRubro || c.rubro === filtroRubro)
           )
-          const maxLeads = filtered[0] ? filtered[0].leads : 1
+          const maxVentas = filtered[0] ? filtered[0].ventas : 1
           const totalLeads = filtered.reduce((a,b) => a + b.leads, 0)
+          const totalVentas = filtered.reduce((a,b) => a + b.ventas, 0)
           return (
             <>
               <div className="filter-results mb-4">
-                <span>{filtered.length}</span> campañas con <span>{fmt(totalLeads)}</span> leads en total
+                <span>{filtered.length}</span> campañas con <span>{fmt(totalVentas)}</span> ventas y <span>{fmt(totalLeads)}</span> leads
                 {filtroMarca && <span> - Marca: <span>{filtroMarca}</span></span>}
                 {filtroRubro && <span> - Rubro: <span>{filtroRubro}</span></span>}
               </div>
@@ -67,13 +68,15 @@ const Tip = ({ active, payload }) => {
                       <th>Marca</th>
                       <th>Rubro</th>
                       <th>Leads</th>
-                      <th style={{ width:200 }}>Volumen</th>
+                      <th>Ventas</th>
+                      <th>% Conv.</th>
+                      <th style={{ width:160 }}>Volumen ventas</th>
                     </tr>
                   </thead>
                   <tbody>
                     {filtered.map((c,i) => {
-                      const barW = Math.round((c.leads / maxLeads) * 100)
-                      const pctTotal = fmt(Math.round((c.leads / totalLeads) * 100))
+                      const barW = Math.round((c.ventas / maxVentas) * 100)
+                      const pctTotal = fmt(Math.round((c.ventas / (totalVentas||1)) * 100))
                       return (
                         <tr key={c.codigo}>
                           <td>
@@ -87,9 +90,14 @@ const Tip = ({ active, payload }) => {
                           <td>
                             <span className="badge badge-gray" style={{ fontSize:'0.6rem' }}>{c.rubro}</span>
                           </td>
+                          <td className="text-xs" style={{ color:'#9ca3af' }}>{fmt(c.leads)}</td>
                           <td>
-                            <span className="font-bold text-xs" style={{ color: BRAND }}>{fmt(c.leads)}</span>
-                            <span className="text-xs ml-1" style={{ color:'#4b5563' }}>({pctTotal}%)</span>
+                            <span className="font-bold text-xs" style={{ color: BRAND }}>{fmt(c.ventas)}</span>
+                          </td>
+                          <td>
+                            <span className="text-xs font-bold" style={{ color: c.leads > 0 && (c.ventas/c.leads) > 0.1 ? BRAND : '#9ca3af' }}>
+                              {c.leads > 0 ? Math.round(c.ventas*100/c.leads) : 0}%
+                            </span>
                           </td>
                           <td>
                             <div className="h-2 rounded-full" style={{ background:'#1f1f1f' }}>
@@ -198,32 +206,45 @@ export default function Dashboard() {
       setMarcaDet(arr)
     }
 
-    // Leads por campaña — cargar campañas separado y cruzar por codigo
-    const [{ data: lCamp }, { data: campList }] = await Promise.all([
+    // Leads y ventas por campaña — solo campañas identificadas con conversiones
+    const [{ data: lCamp }, { data: campList }, { data: vCamp }] = await Promise.all([
       supabase.from('mkt_leads').select('codigo_campana').not('codigo_campana','is',null).limit(50000),
-      supabase.from('mkt_campanas').select('codigo,nombre,marca,rubro')
+      supabase.from('mkt_campanas').select('codigo,nombre,marca,rubro'),
+      supabase.from('mkt_ventas').select('mkt_leads!mkt_ventas_lead_id_fkey(codigo_campana)')
+        .not('lead_id','is',null).limit(10000)
     ])
-    if (lCamp) {
-      // Mapa codigo → campaña
+    if (lCamp && campList) {
+      // Mapa codigo → campaña (solo identificadas)
       const campMap = {}
-      if (campList) campList.forEach(c => { campMap[c.codigo.toLowerCase()] = c })
+      campList.forEach(c => { campMap[c.codigo.toLowerCase()] = c })
+
       // Contar leads por codigo
-      const map = {}
+      const leadsMap = {}
       lCamp.forEach(l => {
         const code = (l.codigo_campana || '').toLowerCase()
-        if (!map[code]) {
-          const camp = campMap[code]
-          map[code] = {
-            codigo: l.codigo_campana,
-            nombre: camp ? camp.nombre : l.codigo_campana,
-            marca:  camp ? camp.marca  : 'Sin identificar',
-            rubro:  camp ? camp.rubro  : '-',
-            leads: 0
-          }
-        }
-        map[code].leads++
+        leadsMap[code] = (leadsMap[code] || 0) + 1
       })
-      setCampanaLeads(Object.values(map).sort((a,b) => b.leads - a.leads))
+
+      // Contar ventas por codigo de campaña del lead
+      const ventasMap = {}
+      if (vCamp) {
+        vCamp.forEach(v => {
+          const code = (v.mkt_leads && v.mkt_leads.codigo_campana) ? v.mkt_leads.codigo_campana.toLowerCase() : null
+          if (code) ventasMap[code] = (ventasMap[code] || 0) + 1
+        })
+      }
+
+      // Construir resultado: solo identificadas Y con ventas > 0
+      const result = []
+      Object.entries(leadsMap).forEach(([code, leads]) => {
+        const camp = campMap[code]
+        if (!camp) return // excluir no identificadas
+        const ventas = ventasMap[code] || 0
+        if (ventas === 0) return // excluir sin conversiones
+        result.push({ codigo: code, nombre: camp.nombre, marca: camp.marca, rubro: camp.rubro, leads, ventas })
+      })
+
+      setCampanaLeads(result.sort((a,b) => b.ventas - a.ventas))
     }
 
     setLoading(false)
@@ -471,12 +492,13 @@ export default function Dashboard() {
             (!filtroMarca || c.marca === filtroMarca) &&
             (!filtroRubro || c.rubro === filtroRubro)
           )
-          const maxLeads = filtered[0] ? filtered[0].leads : 1
+          const maxVentas = filtered[0] ? filtered[0].ventas : 1
           const totalLeads = filtered.reduce((a,b) => a + b.leads, 0)
+          const totalVentas = filtered.reduce((a,b) => a + b.ventas, 0)
           return (
             <>
               <div className="filter-results mb-4">
-                <span>{filtered.length}</span> campañas con <span>{fmt(totalLeads)}</span> leads en total
+                <span>{filtered.length}</span> campañas con <span>{fmt(totalVentas)}</span> ventas y <span>{fmt(totalLeads)}</span> leads
                 {filtroMarca && <span> - Marca: <span>{filtroMarca}</span></span>}
                 {filtroRubro && <span> - Rubro: <span>{filtroRubro}</span></span>}
               </div>
@@ -489,13 +511,15 @@ export default function Dashboard() {
                       <th>Marca</th>
                       <th>Rubro</th>
                       <th>Leads</th>
-                      <th style={{ width:200 }}>Volumen</th>
+                      <th>Ventas</th>
+                      <th>% Conv.</th>
+                      <th style={{ width:160 }}>Volumen ventas</th>
                     </tr>
                   </thead>
                   <tbody>
                     {filtered.map((c,i) => {
-                      const barW = Math.round((c.leads / maxLeads) * 100)
-                      const pctTotal = fmt(Math.round((c.leads / totalLeads) * 100))
+                      const barW = Math.round((c.ventas / maxVentas) * 100)
+                      const pctTotal = fmt(Math.round((c.ventas / (totalVentas||1)) * 100))
                       return (
                         <tr key={c.codigo}>
                           <td>
@@ -509,9 +533,14 @@ export default function Dashboard() {
                           <td>
                             <span className="badge badge-gray" style={{ fontSize:'0.6rem' }}>{c.rubro}</span>
                           </td>
+                          <td className="text-xs" style={{ color:'#9ca3af' }}>{fmt(c.leads)}</td>
                           <td>
-                            <span className="font-bold text-xs" style={{ color: BRAND }}>{fmt(c.leads)}</span>
-                            <span className="text-xs ml-1" style={{ color:'#4b5563' }}>({pctTotal}%)</span>
+                            <span className="font-bold text-xs" style={{ color: BRAND }}>{fmt(c.ventas)}</span>
+                          </td>
+                          <td>
+                            <span className="text-xs font-bold" style={{ color: c.leads > 0 && (c.ventas/c.leads) > 0.1 ? BRAND : '#9ca3af' }}>
+                              {c.leads > 0 ? Math.round(c.ventas*100/c.leads) : 0}%
+                            </span>
                           </td>
                           <td>
                             <div className="h-2 rounded-full" style={{ background:'#1f1f1f' }}>
