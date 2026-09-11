@@ -198,21 +198,28 @@ export default function Dashboard() {
       setMarcaDet(arr)
     }
 
-    // Leads por campaña
-    const { data: lCamp } = await supabase.from('mkt_leads')
-      .select('codigo_campana, mkt_campanas!mkt_leads_campana_id_fkey(nombre,marca,rubro)')
-      .not('codigo_campana','is',null)
-      .limit(50000)
+    // Leads por campaña — cargar campañas separado y cruzar por codigo
+    const [{ data: lCamp }, { data: campList }] = await Promise.all([
+      supabase.from('mkt_leads').select('codigo_campana').not('codigo_campana','is',null).limit(50000),
+      supabase.from('mkt_campanas').select('codigo,nombre,marca,rubro')
+    ])
     if (lCamp) {
+      // Mapa codigo → campaña
+      const campMap = {}
+      if (campList) campList.forEach(c => { campMap[c.codigo.toLowerCase()] = c })
+      // Contar leads por codigo
       const map = {}
       lCamp.forEach(l => {
-        const code = l.codigo_campana
-        if (!map[code]) map[code] = {
-          codigo: code,
-          nombre: (l.mkt_campanas && l.mkt_campanas.nombre) ? l.mkt_campanas.nombre : code,
-          marca:  (l.mkt_campanas && l.mkt_campanas.marca)  ? l.mkt_campanas.marca  : '-',
-          rubro:  (l.mkt_campanas && l.mkt_campanas.rubro)  ? l.mkt_campanas.rubro  : '-',
-          leads: 0
+        const code = (l.codigo_campana || '').toLowerCase()
+        if (!map[code]) {
+          const camp = campMap[code]
+          map[code] = {
+            codigo: l.codigo_campana,
+            nombre: camp ? camp.nombre : l.codigo_campana,
+            marca:  camp ? camp.marca  : 'Sin identificar',
+            rubro:  camp ? camp.rubro  : '-',
+            leads: 0
+          }
         }
         map[code].leads++
       })
