@@ -148,50 +148,35 @@ export default function Leads() {
     if (guardadosFac + guardadosDer > 0) loadLeads()
   }
 
-  // ── ENRIQUECIMIENTO CON IA ────────────────────────────────
+  // ── ENRIQUECIMIENTO CON IA (via n8n workflow MKT-01) ─────
   async function enriquecerConIA() {
     setEnriching(true); setEnrichResult(null)
-    const { data: leadsVacios } = await supabase.from('mkt_leads')
-      .select('id,consulta,dni,telefono,email')
-      .not('consulta', 'is', null)
-      .limit(200)
-    if (!leadsVacios?.length) {
-      setEnrichResult('No hay leads con texto en CONSULTA.')
-      setEnriching(false); return
+    try {
+      // Verificar cuántos leads quedan por enriquecer
+      const { count } = await supabase.from('mkt_leads')
+        .select('*', { count: 'exact', head: true })
+        .not('consulta', 'is', null)
+        .is('dni', null)
+        .is('telefono', null)
+      if (!count || count === 0) {
+        setEnrichResult('Todos los leads ya tienen DNI o teléfono.')
+        setEnriching(false); return
+      }
+      // Disparar el workflow de n8n
+      const resp = await fetch('https://finanzasgr.app.n8n.cloud/webhook/enriquecer-leads-ia', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ triggered: true })
+      })
+      if (resp.ok) {
+        setEnrichResult(`Procesando ${count.toLocaleString('es-AR')} leads con IA. Esto puede tardar 30-45 minutos. Podés cerrar esta pantalla y volver luego.`)
+      } else {
+        setEnrichResult('Error al iniciar el proceso. Verificá el workflow en n8n.')
+      }
+    } catch(e) {
+      setEnrichResult('Error de conexión: ' + e.message)
     }
-    const aEnriquecer = leadsVacios.filter(l => !l.dni || !l.telefono || !l.email)
-    if (!aEnriquecer.length) {
-      setEnrichResult('Todos los leads ya tienen DNI, teléfono y email.')
-      setEnriching(false); return
-    }
-    let actualizados = 0
-    for (const lead of aEnriquecer) {
-      try {
-        const resp = await fetch('https://api.anthropic.com/v1/messages', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            model: 'claude-sonnet-4-6', max_tokens: 200,
-            messages: [{ role: 'user', content:
-              `Extraé del texto: DNI (7-8 dígitos), teléfono (con +54 si está), email.\nRespondé SOLO JSON sin texto extra: {"dni":"solo dígitos o null","telefono":"número completo o null","email":"email o null"}\n\nTexto: ${String(lead.consulta).slice(0,600)}`
-            }]
-          })
-        })
-        const data = await resp.json()
-        const raw = data.content?.[0]?.text || '{}'
-        const extracted = JSON.parse(raw.replace(/```json|```/g,'').trim())
-        const updates = {}
-        if (!lead.dni    && extracted.dni    && extracted.dni    !== 'null') updates.dni    = extracted.dni.replace(/\D/g,'')
-        if (!lead.telefono && extracted.telefono && extracted.telefono !== 'null') updates.telefono = extracted.telefono
-        if (!lead.email  && extracted.email  && extracted.email  !== 'null') updates.email  = extracted.email.toLowerCase()
-        if (Object.keys(updates).length > 0) {
-          await supabase.from('mkt_leads').update(updates).eq('id', lead.id)
-          actualizados++
-        }
-      } catch(e) { console.error('Error IA:', lead.id, e) }
-    }
-    setEnrichResult(`Procesados: ${aEnriquecer.length} · Actualizados: ${actualizados}`)
-    setEnriching(false); loadLeads()
+    setEnriching(false)
   }
 
   const sf = (k, v) => { setFilters(p => ({ ...p, [k]: v })); setPage(0) }
@@ -246,7 +231,7 @@ export default function Leads() {
           <DropZone
             label="Reporte Derivado"
             sublabel="Reporte_Derviado.xls"
-            badge="badge-blue" note="fuente: celer"
+            badge="badge-blue" note="fuente: derivado"
             file={fileDer}
             onFile={f => { setFileDer(f); setResult(null) }}
             onClear={() => setFileDer(null)}
