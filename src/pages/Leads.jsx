@@ -24,8 +24,17 @@ function DropZone({ label, sublabel, badge, note, file, onFile, onClear }) {
         <input ref={ref} type="file" accept=".xls,.xlsx,.csv" className="hidden"
           onChange={e => { if(e.target.files[0]) onFile(e.target.files[0]) }} />
         <div className="text-xl mb-1">{file ? '✓' : '↑'}</div>
-        <div className="font-semibold text-sm text-white">{file ? file.name : sublabel}</div>
-        <div className="text-xs text-gray-500 mt-0.5">{file ? 'Listo para procesar' : 'Clic o arrastrar .xls del Celer'}</div>
+        {file ? (
+          <div>
+            <div className="font-semibold text-sm text-white">Listo para procesar</div>
+            <div className="text-xs mt-0.5" style={{ color:'#4b5563' }}>{file.name}</div>
+          </div>
+        ) : (
+          <div>
+            <div className="font-semibold text-sm text-white">Clic o arrastrar archivo</div>
+            <div className="text-xs text-gray-500 mt-0.5">{sublabel}</div>
+          </div>
+        )}
       </div>
       {file && (
         <button onClick={onClear} className="text-xs text-gray-600 hover:text-red-400 mt-1 transition-colors">
