@@ -246,7 +246,7 @@ export default function Leads() {
           <DropZone
             label="Reporte Derivado"
             sublabel="Reporte_Derviado.xls"
-            badge="badge-blue" note="fuente: derivado"
+            badge="badge-blue" note="fuente: celer"
             file={fileDer}
             onFile={f => { setFileDer(f); setResult(null) }}
             onClear={() => setFileDer(null)}
