@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 import { parseFile, normalizePVRow } from '../lib/parsers'
+import DatePicker from '../components/DatePicker'
 
 const BRAND = '#B5E000'
 const PAGE  = 50
@@ -173,7 +174,7 @@ export default function Ventas() {
       {/* TABLA */}
       <div className="card">
         <div className="section-header">
-          <h2>Ventas y preventas cargadas</h2>
+          <h2>Preventas cargadas</h2>
           <span className="count-badge">{total.toLocaleString('es-AR')} registros</span>
         </div>
         <div className="filter-results">
@@ -182,36 +183,33 @@ export default function Ventas() {
           {filters.marca && <> · Marca: <span>{filters.marca}</span></>}
         </div>
 
-        <div className="flex flex-wrap gap-2 mb-4">
-          <input className="input-dark w-44" placeholder="Nombre, DNI, PV..."
+        <div className="filter-bar">
+          <input className="input-dark" style={{ width:200 }} placeholder="Nombre, DNI, PV..."
             value={filters.search} onChange={e => sf('search', e.target.value)} />
-
-          <select className="input-dark w-36" value={filters.tipo} onChange={e => sf('tipo', e.target.value)}>
+          <div className="filter-sep"/>
+          <select className="input-dark" style={{ width:140 }} value={filters.tipo} onChange={e => sf('tipo', e.target.value)}>
             <option value="">Tipo: todos</option>
             <option>0KM</option>
             <option>USADO</option>
             <option>PLAN AHORRO</option>
           </select>
-
-          <select className="input-dark w-32" value={filters.marca} onChange={e => sf('marca', e.target.value)}>
+          <select className="input-dark" style={{ width:130 }} value={filters.marca} onChange={e => sf('marca', e.target.value)}>
             <option value="">Marca: todas</option>
             <option>KIARA</option><option>CIARA</option><option>PEARA</option><option>MOVILIS</option>
           </select>
 
-          <div className="flex items-center gap-1.5">
+          <div className="filter-sep"/>
+          <div className="flex items-center gap-2 flex-shrink-0">
             <span className="text-xs text-gray-500">Desde</span>
-            <input type="date" className="input-dark w-36"
-              value={filters.desde} onChange={e => sf('desde', e.target.value)} />
+            <DatePicker label="dd/mm/aaaa" value={filters.desde} onChange={v => sf('desde', v)} maxDate={filters.hasta || undefined} />
           </div>
-
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-2 flex-shrink-0">
             <span className="text-xs text-gray-500">Hasta</span>
-            <input type="date" className="input-dark w-36"
-              value={filters.hasta} onChange={e => sf('hasta', e.target.value)} />
+            <DatePicker label="dd/mm/aaaa" value={filters.hasta} onChange={v => sf('hasta', v)} minDate={filters.desde || undefined} />
           </div>
-
+          <div className="filter-sep"/>
           <button onClick={() => { setFilters({ search:'', tipo:'', marca:'', desde:'', hasta:'' }); setPage(0) }}
-            className="text-xs text-gray-600 hover:text-gray-300 self-center">Limpiar</button>
+            className="btn-ghost text-xs flex-shrink-0">Limpiar</button>
         </div>
 
         <div className="overflow-x-auto rounded-lg border" style={{ borderColor: '#2a2a2a' }}>
