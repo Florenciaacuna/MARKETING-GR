@@ -230,9 +230,9 @@ export default function Dashboard() {
       <div className="grid grid-cols-4 gap-3">
         {[
           { label:'LEADS',          value: fmt(kpis ? kpis.totalLeads    : 0), sub:'consultas digitales' },
-          { label:'VENTAS',         value: fmt(kpis ? kpis.totalVentas   : 0), sub:'preventas cargadas', accent:true },
+          { label:'PREVENTAS',         value: fmt(kpis ? kpis.totalVentas   : 0), sub:'prepreventas cargadas', accent:true },
           { label:'CON LEAD',       value: fmt(kpis ? kpis.ventasConLead : 0), sub:'origen identificado', accent:true },
-          { label:'CONVERSIÓN',     value: pctConversion,                       sub:'ventas / total preventas' },
+          { label:'CONVERSIÓN',     value: pctConversion,                       sub:'preventas / total preventas' },
         ].map(k => (
           <div key={k.label} className="rounded-xl p-4 border" style={{ background: k.accent ? '#1a2e00' : '#111', borderColor: k.accent ? BRAND : GRAY3 }}>
             <div className="text-2xl font-black" style={{ color: k.accent ? BRAND : '#fff' }}>{loading ? '—' : k.value}</div>
@@ -254,7 +254,7 @@ export default function Dashboard() {
                 <tr>
                   <th>Marca</th>
                   <th>Leads</th>
-                  <th>Ventas</th>
+                  <th>Preventas</th>
                   <th>Con lead</th>
                   <th>Conv.</th>
                 </tr>
@@ -289,7 +289,7 @@ export default function Dashboard() {
 
         {/* Torta Ventas */}
         <div className="card">
-          <div className="section-header"><h2>Ventas por marca</h2></div>
+          <div className="section-header"><h2>Preventas por marca</h2></div>
           <ResponsiveContainer width="100%" height={220}>
             <PieChart>
               <Pie data={pieMarcas} cx="50%" cy="50%" outerRadius={80} innerRadius={35}
@@ -327,7 +327,7 @@ export default function Dashboard() {
       {/* HISTÓRICO */}
       <div className="card">
         <div className="section-header">
-          <h2>Histórico mensual — Leads vs Ventas</h2>
+          <h2>Histórico mensual — Leads vs Preventas</h2>
         </div>
         <ResponsiveContainer width="100%" height={220}>
           <LineChart data={historico} margin={{ left:0, right:16, top:8, bottom:0 }}>
@@ -336,7 +336,7 @@ export default function Dashboard() {
             <YAxis tick={{ fill:'#6b7280', fontSize:10 }} />
             <Tooltip content={<TipCustom />} />
             <Legend wrapperStyle={{ fontSize:11, color:'#9ca3af' }} />
-            <Line type="monotone" dataKey="ventas"  name="Ventas"       stroke={BRAND}    strokeWidth={2} dot={{ fill: BRAND, r:3 }} />
+            <Line type="monotone" dataKey="ventas"  name="Preventas"       stroke={BRAND}    strokeWidth={2} dot={{ fill: BRAND, r:3 }} />
             <Line type="monotone" dataKey="conLead" name="Con lead"     stroke="#5f7200"  strokeWidth={2} dot={{ fill:'#5f7200', r:3 }} />
           </LineChart>
         </ResponsiveContainer>
@@ -349,7 +349,7 @@ export default function Dashboard() {
           <span className="count-badge">{campFiltered.length} campañas con conversiones</span>
         </div>
         <div className="filter-results mb-3">
-          {campFiltered.length} campañas con <span>{fmt(campFiltered.reduce((a,b)=>a+b.ventas,0))}</span> ventas y <span>{fmt(campFiltered.reduce((a,b)=>a+b.leads,0))}</span> leads
+          {campFiltered.length} campañas con <span>{fmt(campFiltered.reduce((a,b)=>a+b.ventas,0))}</span> preventas y <span>{fmt(campFiltered.reduce((a,b)=>a+b.leads,0))}</span> leads
         </div>
         <div className="overflow-x-auto rounded-lg border" style={{ borderColor: GRAY3 }}>
           <table className="dark-table">
@@ -359,7 +359,7 @@ export default function Dashboard() {
                 <th>Marca</th>
                 <th>Rubro</th>
                 <th>Leads</th>
-                <th>Ventas</th>
+                <th>Preventas</th>
                 <th>% Conv.</th>
                 <th style={{ width:140 }}>Volumen</th>
               </tr>
