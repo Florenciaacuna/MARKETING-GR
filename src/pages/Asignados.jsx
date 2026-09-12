@@ -152,7 +152,7 @@ export default function Asignados() {
       from += 1000
     }
     log('Leads cargados: ' + allLeads.length)
-    log('Cargando ventas...')
+    log('Cargando preventas...')
     let allVentas = []; from = 0
     while (true) {
       const { data: batch } = await supabase.from('mkt_ventas').select('id,dni,telefono_personal,celular_personal,proceso').range(from, from+999)
@@ -161,7 +161,7 @@ export default function Asignados() {
       if (batch.length < 1000) break
       from += 1000
     }
-    log('Ventas cargadas: ' + allVentas.length)
+    log('Prepreventas cargadas: ' + allVentas.length)
     log('Construyendo indices...')
     const byDNI = new Map(); const byPhone = new Map(); const byPhone8 = new Map(); const byJobSeq = new Map()
     for (const lead of allLeads) {
@@ -192,7 +192,7 @@ export default function Asignados() {
       const batch = updates.slice(i, i+100)
       await Promise.all(batch.map(u => supabase.from('mkt_ventas').update({ lead_id: u.lead_id, campana_id: u.campana_id, metodo_match: u.metodo_match, lead_origen: u.lead_origen }).eq('id', u.id)))
     }
-    log('Cruce completado. ' + updates.length + ' ventas actualizadas.')
+    log('Cruce completado. ' + updates.length + ' preventas actualizadas.')
     setRunning(false); loadStats(); loadData()
   }
 
@@ -229,7 +229,7 @@ export default function Asignados() {
           <div className="grid grid-cols-3 gap-4 mb-4">
             <div className="rounded-lg p-4 border" style={{ background:'#111', borderColor:'#2a2a2a' }}>
               <div className="text-2xl font-black text-white">{stats.totalV.toLocaleString('es-AR')}</div>
-              <div className="text-xs text-gray-500 mt-1 uppercase font-bold">Total ventas</div>
+              <div className="text-xs text-gray-500 mt-1 uppercase font-bold">Total preventas</div>
             </div>
             <div className="rounded-lg p-4 border" style={{ background:'#1a2e00', borderColor: BRAND }}>
               <div className="text-2xl font-black" style={{ color: BRAND }}>{stats.digital.toLocaleString('es-AR')}</div>
@@ -345,7 +345,7 @@ export default function Asignados() {
               )}
               {!loading && data.length === 0 && (
                 <tr><td colSpan={10} className="text-center py-10 text-gray-600">
-                  {tab === 'digital' ? 'Sin ventas con lead. Ejecuta el cruce primero.' : 'Todas las ventas tienen lead.'}
+                  {tab === 'digital' ? 'Sin preventas con lead. Ejecuta el cruce primero.' : 'Todas las preventas tienen lead.'}
                 </td></tr>
               )}
               {data.filter(v => {
