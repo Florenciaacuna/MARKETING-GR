@@ -28,6 +28,7 @@ export default function DatePicker({ label, value, onChange }) {
     const ref = fromISO(value) || new Date()
     return { y: ref.getFullYear(), m: ref.getMonth() }
   })
+  const [pos, setPos] = useState({ top: 0, left: 0 })
   const ref = useRef(null)
 
   useEffect(() => {
@@ -82,7 +83,13 @@ export default function DatePicker({ label, value, onChange }) {
 
       {/* Trigger */}
       <div
-        onClick={() => setOpen(o => !o)}
+        onClick={() => {
+          if (!open && ref.current) {
+            const r = ref.current.getBoundingClientRect()
+            setPos({ top: r.bottom + 6, left: r.left })
+          }
+          setOpen(o => !o)
+        }}
         style={{
           display: 'flex', alignItems: 'center', gap: 8,
           background: '#111', border: `1px solid ${open ? BRAND : '#3a3a3a'}`,
@@ -111,7 +118,7 @@ export default function DatePicker({ label, value, onChange }) {
       {/* Dropdown */}
       {open && (
         <div style={{
-          position: 'absolute', top: 'calc(100% + 6px)', left: 0, zIndex: 9999,
+          position: 'fixed', top: pos.top, left: pos.left, zIndex: 99999,
           background: '#181818', border: '1px solid #333',
           borderRadius: 12, padding: 16, width: 272,
           boxShadow: '0 12px 40px rgba(0,0,0,0.7)'
