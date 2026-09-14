@@ -58,8 +58,15 @@ export default function Leads() {
   const [showFmt,      setShowFmt]      = useState(false)
   const [enriching,    setEnriching]    = useState(false)
   const [enrichResult, setEnrichResult] = useState(null)
+  const [campanas,     setCampanas]     = useState([])
+  const [showManual,   setShowManual]   = useState(false)
+  const [manualForm,   setManualForm]   = useState({ nombre:'', apellido:'', telefono:'', email:'', campana_id:'' })
+  const [manualSaving, setManualSaving] = useState(false)
+  const [manualMsg,    setManualMsg]    = useState('')
 
-  const loadLeads = useCallback(async () => {
+  const mf = (k, v) => setManualForm(p => ({ ...p, [k]: v }))
+
+    const loadLeads = useCallback(async () => {
     setLoading(true)
     let q = supabase.from('mkt_leads')
       .select('id,nro_tramite,fecha_consulta,apellido,nombre,dni,telefono,email,origen,canal,codigo_campana,vendedor,fuente,campana_id,estado', { count: 'exact' })
@@ -76,6 +83,46 @@ export default function Leads() {
   }, [page, filters])
 
   useEffect(() => { loadLeads() }, [loadLeads])
+
+  useEffect(() => {
+    supabase.from('mkt_campanas').select('id,codigo,nombre,marca,rubro')
+      .eq('activo', true).order('nombre')
+      .then(({ data }) => setCampanas(data || []))
+  }, [])
+
+  async function guardarLeadManual() {
+    if (!manualForm.campana_id) { setManualMsg('La campaña es obligatoria.'); return }
+    if (!manualForm.nombre && !manualForm.apellido) { setManualMsg('Ingresá al menos nombre o apellido.'); return }
+    setManualSaving(true); setManualMsg('')
+    const camp = campanas.find(c => c.id === manualForm.campana_id)
+    const today = new Date().toISOString().slice(0,10)
+    const { error } = await supabase.from('mkt_leads').insert({
+      nombre:         manualForm.nombre.trim() || null,
+      apellido:       manualForm.apellido.trim() || null,
+      telefono:       manualForm.telefono.trim() || null,
+      celular:        manualForm.telefono.trim() || null,
+      email:          manualForm.email.trim() || null,
+      campana_id:     manualForm.campana_id,
+      codigo_campana: camp ? camp.codigo : null,
+      fuente:         'manual',
+      origen:         'Evento',
+      fecha_consulta: today,
+      estado:         'nuevo'
+    })
+    if (error) { setManualMsg('Error: ' + error.message) }
+    else {
+      setManualMsg('✓ Lead cargado')
+      setManualForm(p => ({ ...p, nombre:'', apellido:'', telefono:'', email:'' }))
+      loadLeads()
+    }
+    setManualSaving(false)
+  }
+
+  useEffect(() => {
+    supabase.from('mkt_campanas').select('id,nombre,marca,rubro')
+      .eq('activo', true).order('nombre')
+      .then(({ data }) => setCampanas(data || []))
+  }, [])
 
   // ── PROCESAR ARCHIVOS ─────────────────────────────────────
   async function procesar() {
@@ -286,6 +333,72 @@ export default function Leads() {
             </button>
           </div>
         </div>
+      </div>
+
+      {/* CARGA MANUAL */}
+      <div className="card">
+        <div className="flex items-center justify-between mb-3">
+          <div>
+            <div className="text-xs font-bold uppercase tracking-widest" style={{ color: BRAND }}>Carga manual de leads</div>
+            <div className="text-xs mt-0.5" style={{ color:'#4b5563' }}>Para asistentes a eventos u otros canales no digitales</div>
+          </div>
+          <button onClick={() => { setShowManual(p => !p); setManualMsg('') }} className="btn-ghost text-xs">
+            {showManual ? '✕ Cerrar' : '+ Agregar lead'}
+          </button>
+        </div>
+        {showManual && (
+          <div style={{ background:'#0f0f0f', border:'1px solid #2a2a2a', borderRadius:10, padding:16 }}>
+            <div className="grid gap-3" style={{ gridTemplateColumns:'1fr 1fr 1fr 1fr' }}>
+              <div>
+                <div className="text-xs text-gray-500 mb-1">Nombre</div>
+                <input className="input-dark w-full" placeholder="Nombre"
+                  value={manualForm.nombre} onChange={e => mf('nombre', e.target.value)} />
+              </div>
+              <div>
+                <div className="text-xs text-gray-500 mb-1">Apellido</div>
+                <input className="input-dark w-full" placeholder="Apellido"
+                  value={manualForm.apellido} onChange={e => mf('apellido', e.target.value)} />
+              </div>
+              <div>
+                <div className="text-xs text-gray-500 mb-1">Teléfono</div>
+                <input className="input-dark w-full" placeholder="Ej: 2214567890"
+                  value={manualForm.telefono} onChange={e => mf('telefono', e.target.value)} />
+              </div>
+              <div>
+                <div className="text-xs text-gray-500 mb-1">Email</div>
+                <input className="input-dark w-full" placeholder="correo@ejemplo.com"
+                  value={manualForm.email} onChange={e => mf('email', e.target.value)} />
+              </div>
+            </div>
+            <div className="mt-3">
+              <div className="text-xs mb-1 font-bold" style={{ color: BRAND }}>
+                Campaña / Evento <span style={{ color:'#ef4444' }}>*</span>
+                <span className="font-normal text-gray-500 ml-1">(obligatorio)</span>
+              </div>
+              <select className="input-dark w-full" value={manualForm.campana_id}
+                onChange={e => mf('campana_id', e.target.value)}
+                style={{ borderColor: !manualForm.campana_id ? '#5a1e00' : '#2a2a2a' }}>
+                <option value="">— Seleccionar campaña o evento</option>
+                {campanas.map(c => (
+                  <option key={c.id} value={c.id}>{c.nombre} — {c.marca} ({c.rubro})</option>
+                ))}
+              </select>
+            </div>
+            <div className="flex items-center gap-3 mt-4">
+              <button onClick={guardarLeadManual} disabled={manualSaving || !manualForm.campana_id}
+                className="btn-primary" style={{ opacity: !manualForm.campana_id ? 0.5 : 1 }}>
+                {manualSaving ? 'Guardando...' : 'Guardar lead'}
+              </button>
+              <button onClick={() => setManualForm(p => ({ ...p, nombre:'', apellido:'', telefono:'', email:'' }))}
+                className="btn-ghost text-xs">Limpiar</button>
+              {manualMsg && (
+                <span className="text-xs" style={{ color: manualMsg.startsWith('✓') ? BRAND : '#ef4444' }}>
+                  {manualMsg}
+                </span>
+              )}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* TABLA */}
