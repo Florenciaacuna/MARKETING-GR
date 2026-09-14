@@ -384,7 +384,7 @@ export default function Asignados() {
                               <button onClick={() => setEditing(null)} className="text-gray-600 text-xs">x</button>
                             </div>
                           ) : (
-                            <div className="cursor-pointer group">
+                            <div className="cursor-pointer">
                               {lead && lead.canal ? <span className="badge badge-blue" style={{fontSize:'0.6rem'}}>{lead.canal}</span> : <span className="text-gray-600 text-xs">- ed</span>}
                             </div>
                           )}
