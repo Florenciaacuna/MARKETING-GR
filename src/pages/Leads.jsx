@@ -102,7 +102,8 @@ export default function Leads() {
     let diagFac = null, diagDer = null
 
     if (fileFac) {
-      const rows = await parseFile(fileFac)
+      const raw1 = await parseFile(fileFac)
+      const rows = Array.isArray(raw1) ? raw1 : (raw1.data || [])
       const mapeados = rows.map(normalizeFacilitadoresRow)
       const visto = new Map()
       mapeados.filter(l => l.nro_tramite)
@@ -119,7 +120,8 @@ export default function Leads() {
     }
 
     if (fileDer) {
-      const rows = await parseFile(fileDer)
+      const raw2 = await parseFile(fileDer)
+      const rows = Array.isArray(raw2) ? raw2 : (raw2.data || [])
       const mapeados = rows.map(normalizeDerivadoLeadRow)
       const visto = new Map()
       mapeados.filter(l => l.nro_tramite).forEach(l => visto.set(l.nro_tramite + '|' + l.fuente, l))
@@ -183,20 +185,28 @@ export default function Leads() {
   async function cargarExcelAsistentes(f) {
     setExcelFile(f); setExcelLoading(true); setManualMsg('')
     try {
-      const rows = await parseFile(f)
+      const result = await parseFile(f)
+      const rows = Array.isArray(result) ? result : (result.data || result || [])
       const get = (row, ...keys) => {
         for (const k of keys) {
           const found = Object.keys(row).find(rk => rk.toLowerCase().replace(/[^a-z]/g,'').includes(k))
-          if (found && row[found]) return String(row[found]).trim()
+          if (found && row[found] !== null && row[found] !== undefined) {
+            const val = String(row[found]).trim()
+            if (val && val !== '0') return val
+          }
         }
         return ''
       }
-      const preview = rows.slice(0,500).map(row => ({
-        nombre:   get(row,'nombre','name','first'),
-        apellido: get(row,'apellido','lastname','surname'),
-        telefono: get(row,'telefono','celular','phone','cel','tel','movil'),
-        email:    get(row,'email','mail','correo'),
-      })).filter(r => r.nombre || r.apellido || r.telefono || r.email)
+      const preview = rows.slice(0,500).map(row => {
+        // Detectar campo "Nombre y Apellido" combinado
+        const nombreCompleto = get(row,'nombreyapellido','nombrey','fullname')
+        const nombre   = nombreCompleto || get(row,'nombre','name','first')
+        const apellido = nombreCompleto ? '' : get(row,'apellido','lastname','surname')
+        const telefono = get(row,'celular','telefono','phone','cel','tel','movil','whatsapp')
+        const email    = get(row,'correo','email','mail','emailaddress')
+        const dni      = get(row,'dni','cedula','documento','id')
+        return { nombre, apellido, telefono, email, dni }
+      }).filter(r => r.nombre || r.apellido || r.telefono || r.email)
       setExcelPreview(preview)
     } catch(e) { setManualMsg('Error al leer el Excel: ' + e.message) }
     setExcelLoading(false)
@@ -420,15 +430,15 @@ export default function Leads() {
                       style={{ borderColor:'#2a2a2a', maxHeight:200, overflowY:'auto' }}>
                       <table className="dark-table">
                         <thead>
-                          <tr><th>Nombre</th><th>Apellido</th><th>Teléfono</th><th>Email</th></tr>
+                          <tr><th>Nombre / Apellido</th><th>Teléfono</th><th>Email</th><th>DNI</th></tr>
                         </thead>
                         <tbody>
                           {excelPreview.slice(0,10).map((r,i) => (
                             <tr key={i}>
-                              <td className="text-xs text-white">{r.nombre || '-'}</td>
-                              <td className="text-xs text-white">{r.apellido || '-'}</td>
+                              <td className="text-xs text-white">{[r.nombre, r.apellido].filter(Boolean).join(' ') || '-'}</td>
                               <td className="text-xs text-gray-400">{r.telefono || '-'}</td>
                               <td className="text-xs text-gray-400">{r.email || '-'}</td>
+                              <td className="text-xs text-gray-400">{r.dni || '-'}</td>
                             </tr>
                           ))}
                           {excelPreview.length > 10 && (
