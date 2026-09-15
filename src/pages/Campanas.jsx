@@ -55,7 +55,7 @@ export default function Campanas() {
 
     // Leads, ventas y gastos paginados — superan límite de 1000 filas de Supabase
     const [leadsData, ventasData, gastosData] = await Promise.all([
-      fetchAll('mkt_leads',  'campana_id',                 'campana_id'),
+      fetchAll('mkt_leads',  'campana_id,fuente',          'campana_id'),
       fetchAll('mkt_ventas', 'campana_id,resultado_bruto,gestoria', 'campana_id'),
       fetchAll('mkt_gastos', 'campana_id,monto',           null)
     ])
@@ -64,7 +64,12 @@ export default function Campanas() {
     const map = {}
     const init = id => { if (!map[id]) map[id] = { leads:0, ventas:0, gasto:0 } }
 
-    leadsData?.forEach(l => { init(l.campana_id); map[l.campana_id].leads++ })
+    leadsData?.forEach(l => {
+      init(l.campana_id)
+      map[l.campana_id].leads++
+      if (l.fuente === 'manual') map[l.campana_id].leadsEvento = (map[l.campana_id].leadsEvento||0)+1
+      else map[l.campana_id].leadsDigital = (map[l.campana_id].leadsDigital||0)+1
+    })
     ventasData?.forEach(v => {
       init(v.campana_id)
       map[v.campana_id].ventas++
@@ -268,8 +273,11 @@ export default function Campanas() {
                   <div className="flex gap-6 flex-1">
 
                     <div className="text-center px-2">
-                      <div className="text-xl font-black text-white">{fmtN(s.leads)}</div>
-                      <div className="text-xs mt-0.5" style={{ color:'#4b5563' }}>LEADS</div>
+                      <div className="text-xl font-black text-white">{fmtN(s.leadsDigital||s.leads)}</div>
+                      <div className="text-xs mt-0.5" style={{ color:'#4b5563' }}>LEADS DIGITAL</div>
+                      {s.leadsEvento > 0 && (
+                        <div className="text-xs" style={{ color:'#374151' }}>+{fmtN(s.leadsEvento)} evento</div>
+                      )}
                     </div>
 
                     <div className="text-center px-2">
@@ -291,29 +299,32 @@ export default function Campanas() {
 
                     <div className="text-center px-2">
                       {s.gasto > 0 ? (
-                        <div className="flex flex-col items-center gap-0.5">
+                        <div className="flex gap-4 items-center">
+                          {s.resultado > 0 && (
+                            <div className="text-center">
+                              <div className="text-xl font-black" style={{ color:'#9ca3af' }}>
+                                {((s.resultado - s.gasto)/s.gasto*100).toFixed(1)}%
+                              </div>
+                              <div className="text-xs font-bold uppercase mt-0.5" style={{ color:'#4b5563' }}>S/GEST</div>
+                            </div>
+                          )}
                           {s.conGestoria > 0 && (
-                            <div>
+                            <div className="text-center">
                               <div className="text-2xl font-black" style={{ color: s.conGestoria > s.gasto ? BRAND : '#ef4444' }}>
                                 {((s.conGestoria - s.gasto)/s.gasto*100).toFixed(1)}%
                               </div>
-                              <div className="text-xs font-bold uppercase" style={{ color:'#4b5563' }}>ROI c/gest.</div>
-                            </div>
-                          )}
-                          {s.resultado > 0 && (
-                            <div className="text-xs" style={{ color:'#4b5563' }}>
-                              S/gest: {((s.resultado - s.gasto)/s.gasto*100).toFixed(1)}%
+                              <div className="text-xs font-bold uppercase mt-0.5" style={{ color:'#4b5563' }}>C/GEST</div>
                             </div>
                           )}
                           {!s.conGestoria && !s.resultado && (
-                            <div>
+                            <div className="text-center">
                               <div className="text-2xl font-black" style={{ color:'#4b5563' }}>—</div>
-                              <div className="text-xs font-bold uppercase" style={{ color:'#374151' }}>ROI</div>
+                              <div className="text-xs font-bold uppercase mt-0.5" style={{ color:'#374151' }}>ROI</div>
                             </div>
                           )}
                         </div>
                       ) : (
-                        <div>
+                        <div className="text-center">
                           <div className="text-xl font-black" style={{ color:'#4b5563' }}>—</div>
                           <div className="text-xs mt-0.5 font-bold uppercase" style={{ color:'#374151' }}>ROI</div>
                         </div>
