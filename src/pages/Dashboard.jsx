@@ -51,6 +51,7 @@ export default function Dashboard() {
   const [porMarca,     setPorMarca]     = useState([])
   const [historico,    setHistorico]    = useState([])
   const [campLeads,    setCampLeads]    = useState([])
+  const [origenLeads,  setOrigenLeads]  = useState([])
   const [loading,      setLoading]      = useState(true)
 
   function toggleMarca(m) {
@@ -146,6 +147,21 @@ export default function Dashboard() {
         ...m,
         label: new Date(m.mes+'-15').toLocaleString('es-AR',{month:'short',year:'2-digit'})
       })))
+    }
+
+    // --- Origen de leads ---
+    const origenData = await fetchAll('mkt_leads', 'canal,origen', null)
+    if (origenData) {
+      const map = {}
+      origenData.forEach(l => {
+        const key = l.canal || l.origen || 'Sin identificar'
+        map[key] = (map[key]||0)+1
+      })
+      const arr = Object.entries(map)
+        .sort((a,b) => b[1]-a[1])
+        .slice(0,10)
+        .map(([nombre,leads]) => ({ nombre, leads }))
+      setOrigenLeads(arr)
     }
 
     // --- Leads y ventas por campaña usando campana_id FK directo ---
@@ -494,6 +510,37 @@ export default function Dashboard() {
             <Line type="monotone" dataKey="conLead" name="Con lead"     stroke="#5f7200"  strokeWidth={2} dot={{ fill:'#5f7200', r:3 }} />
           </LineChart>
         </ResponsiveContainer>
+      </div>
+
+      {/* ORIGEN DE LEADS */}
+      <div className="card">
+        <div className="section-header">
+          <h2>Origen de leads</h2>
+          <span className="count-badge">{origenLeads.reduce((s,o)=>s+o.leads,0).toLocaleString('es-AR')} leads</span>
+        </div>
+        <div className="space-y-2 mt-2">
+          {origenLeads.map((o, i) => {
+            const max = origenLeads[0]?.leads || 1
+            const pctBar = Math.round(o.leads * 100 / max)
+            const pctTotal = origenLeads.reduce((s,x)=>s+x.leads,0)
+            const pctOf = Math.round(o.leads * 100 / (pctTotal||1))
+            return (
+              <div key={o.nombre}>
+                <div className="flex justify-between items-center mb-1">
+                  <span className="text-xs font-medium text-white">{o.nombre}</span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-bold" style={{ color: BRAND }}>{o.leads.toLocaleString('es-AR')}</span>
+                    <span className="text-xs" style={{ color:'#4b5563' }}>({pctOf}%)</span>
+                  </div>
+                </div>
+                <div className="h-2 rounded-full" style={{ background:'#1f1f1f' }}>
+                  <div className="h-2 rounded-full transition-all"
+                    style={{ width: pctBar+'%', background: PALETTE[i % PALETTE.length] }}/>
+                </div>
+              </div>
+            )
+          })}
+        </div>
       </div>
 
       {/* TABLA CAMPAÑAS */}
