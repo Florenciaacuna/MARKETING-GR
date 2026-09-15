@@ -1,3 +1,4 @@
+import PencilIcon from '../components/PencilIcon'
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
 
