@@ -1,3 +1,4 @@
+import PencilIcon from '../components/PencilIcon'
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 
@@ -482,7 +483,7 @@ export default function Campanas() {
                                     <td className="font-bold text-xs" style={{ color: BRAND }}>{fmt(g.monto)}</td>
                                     <td>
                                       <div className="flex gap-2">
-                                        <button onClick={() => setEditGasto({...g})} className="text-xs text-gray-600 hover:text-gray-300">✏</button>
+                                        <button onClick={() => setEditGasto({...g})} className="pencil-icon" title="Editar"><PencilIcon size={13} color="#888" /></button>
                                         <button onClick={() => eliminarGasto(c.id, g.id, g.monto)} className="text-xs text-gray-600 hover:text-red-400">✕</button>
                                       </div>
                                     </td>
@@ -578,7 +579,7 @@ function IngresoEditor({ campana, onUpdate }) {
         ? <span className="text-sm font-bold" style={{ color: BRAND }}>{display}</span>
         : <span className="text-xs" style={{ color:'#4b5563' }}>— cargar ingreso para ver ROI</span>
       }
-      <span className="text-xs" style={{ color:'#3a3a3a' }}>✏</span>
+      <PencilIcon size={13} color="#555" />
     </div>
   )
 }
