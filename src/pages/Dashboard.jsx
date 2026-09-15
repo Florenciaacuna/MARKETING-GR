@@ -131,31 +131,24 @@ export default function Dashboard() {
       })))
     }
 
-    // --- Leads por campaña ---
-    const [{ data: lCamp }, { data: campList }] = await Promise.all([
-      supabase.from('mkt_leads').select('codigo_campana').not('codigo_campana','is',null).limit(50000),
-      supabase.from('mkt_campanas').select('codigo,nombre,marca,rubro')
+    // --- Leads y ventas por campaña usando campana_id FK directo ---
+    const [{ data: lCamp }, { data: vCampDirect }, { data: campList }] = await Promise.all([
+      supabase.from('mkt_leads').select('campana_id').not('campana_id','is',null).limit(60000),
+      supabase.from('mkt_ventas').select('campana_id').not('campana_id','is',null).limit(20000),
+      supabase.from('mkt_campanas').select('id,codigo,nombre,marca,rubro')
     ])
-    if (lCamp && campList) {
+    if (campList) {
       const campMap = {}
-      campList.forEach(c => { campMap[c.codigo.toLowerCase()] = c })
+      campList.forEach(c => { campMap[c.id] = c })
       const lMap = {}
-      lCamp.forEach(l => { const c = (l.codigo_campana||'').toLowerCase(); lMap[c] = (lMap[c]||0)+1 })
-      const { data: vCamp } = await applyV(
-        supabase.from('mkt_ventas').select('mkt_leads!mkt_ventas_lead_id_fkey(codigo_campana)')
-      ).not('lead_id','is',null).limit(10000)
+      lCamp?.forEach(l => { lMap[l.campana_id] = (lMap[l.campana_id]||0)+1 })
       const vMap = {}
-      if (vCamp) vCamp.forEach(v => {
-        const c = (v.mkt_leads && v.mkt_leads.codigo_campana) ? v.mkt_leads.codigo_campana.toLowerCase() : null
-        if (c) vMap[c] = (vMap[c]||0)+1
-      })
+      vCampDirect?.forEach(v => { vMap[v.campana_id] = (vMap[v.campana_id]||0)+1 })
       const result = []
-      Object.entries(lMap).forEach(([code, leads]) => {
-        const camp = campMap[code]
+      Object.entries(vMap).forEach(([id, ventas]) => {
+        const camp = campMap[id]
         if (!camp) return
-        const ventas = vMap[code] || 0
-        if (ventas === 0) return
-        result.push({ codigo:code, nombre:camp.nombre, marca:camp.marca, rubro:camp.rubro, leads, ventas })
+        result.push({ id, nombre:camp.nombre, marca:camp.marca, rubro:camp.rubro, leads:lMap[id]||0, ventas })
       })
       setCampLeads(result.sort((a,b) => b.ventas - a.ventas))
     }
