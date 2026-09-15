@@ -46,10 +46,10 @@ export default function Campanas() {
       .not('campana_id', 'is', null)
       .limit(60000)
 
-    // Ventas por campaña (bulk)
+    // Ventas por campaña (bulk) — incluye resultado_bruto
     const { data: ventasData } = await supabase
       .from('mkt_ventas')
-      .select('campana_id')
+      .select('campana_id,resultado_bruto')
       .not('campana_id', 'is', null)
       .limit(20000)
 
@@ -64,7 +64,7 @@ export default function Campanas() {
     const init = id => { if (!map[id]) map[id] = { leads:0, ventas:0, gasto:0 } }
 
     leadsData?.forEach(l => { init(l.campana_id); map[l.campana_id].leads++ })
-    ventasData?.forEach(v => { init(v.campana_id); map[v.campana_id].ventas++ })
+    ventasData?.forEach(v => { init(v.campana_id); map[v.campana_id].ventas++; map[v.campana_id].resultado = (map[v.campana_id].resultado||0)+(v.resultado_bruto||0) })
     gastosData?.forEach(g => { init(g.campana_id); map[g.campana_id].gasto += (g.monto||0) })
 
     setStats(map)
@@ -87,6 +87,8 @@ export default function Campanas() {
     setLoading(false)
   }
 
+  const [preventas, setPreventas] = useState({}) // { campana_id: [...] }
+
   async function loadGastos(campanaId) {
     const { data } = await supabase
       .from('mkt_gastos')
@@ -96,10 +98,20 @@ export default function Campanas() {
     setGastos(prev => ({ ...prev, [campanaId]: data || [] }))
   }
 
+  async function loadPreventas(campanaId) {
+    const { data } = await supabase
+      .from('mkt_ventas')
+      .select('id,pv_solicitud,fecha,nombre,dni,vendedor,marca,metodo_match,margen_bruto,bonificacion_terminal,resultado_bruto')
+      .eq('campana_id', campanaId)
+      .order('fecha', { ascending: false })
+    setPreventas(prev => ({ ...prev, [campanaId]: data || [] }))
+  }
+
   function toggle(id) {
     if (expanded === id) { setExpanded(null); return }
     setExpanded(id); setForm(emptyForm); setEditGasto(null)
-    if (!gastos[id]) loadGastos(id)
+    if (!gastos[id])    loadGastos(id)
+    if (!preventas[id]) loadPreventas(id)
   }
 
   async function guardarGasto(campanaId) {
@@ -220,9 +232,7 @@ export default function Campanas() {
             const isOpen = expanded === c.id
             const cpl    = s.leads  > 0 ? s.gasto / s.leads  : 0
             const cpv    = s.ventas > 0 ? s.gasto / s.ventas : 0
-            const roi    = s.gasto > 0 && c.ingreso_manual > 0
-              ? ((c.ingreso_manual - s.gasto) / s.gasto * 100).toFixed(1)
-              : null
+
 
             return (
               <div key={c.id} className="card" style={{ padding:0, overflow:'hidden' }}>
@@ -281,11 +291,11 @@ export default function Campanas() {
                     </div>
 
                     <div className="text-center">
-                      {roi !== null ? (
+                      {s.resultado && s.gasto > 0 ? (
                         <>
                           <div className="text-sm font-bold"
-                            style={{ color: parseFloat(roi) > 0 ? BRAND : '#ef4444' }}>
-                            {roi}%
+                            style={{ color: s.resultado > s.gasto ? BRAND : '#ef4444' }}>
+                            {((s.resultado - s.gasto)/s.gasto*100).toFixed(1)}%
                           </div>
                           <div className="text-xs" style={{ color:'#4b5563' }}>ROI</div>
                         </>
@@ -309,12 +319,92 @@ export default function Campanas() {
                 {isOpen && (
                   <div style={{ borderTop:'1px solid #1a2e00', padding:16 }}>
 
-                    {/* Ingresos para ROI */}
-                    <div className="flex items-center gap-3 mb-4 p-3 rounded-lg"
-                      style={{ background:'#0f0f0f', border:'1px solid #2a2a2a' }}>
-                      <div className="text-xs text-gray-500">Ingreso estimado (para calcular ROI):</div>
-                      <IngresoEditor campana={c} onUpdate={loadAll} />
-                    </div>
+                    {/* TABLA DE PREVENTAS */}
+                    {(() => {
+                      const pvList = preventas[c.id] || []
+                      const totalResultado = pvList.reduce((s,v) => s+(v.resultado_bruto||0), 0)
+                      const totalBonif     = pvList.reduce((s,v) => s+(v.bonificacion_terminal||0), 0)
+                      const inversion      = s.gasto
+                      const roi            = inversion > 0 && totalResultado > 0
+                        ? ((totalResultado - inversion) / inversion * 100).toFixed(1)
+                        : null
+
+                      return (
+                        <div className="mb-4">
+                          <div className="flex items-center justify-between mb-2">
+                            <div className="text-xs font-bold uppercase tracking-widest" style={{ color: BRAND }}>
+                              Preventas vinculadas — {pvList.length}
+                            </div>
+                            {roi && (
+                              <div className="flex items-center gap-3">
+                                <span className="text-xs text-gray-500">Resultado bruto: <span className="font-bold text-white">{fmt(totalResultado)}</span></span>
+                                <span className="text-xs font-black px-3 py-1 rounded-lg"
+                                  style={{ background: parseFloat(roi)>0?'#1a2e00':'#2e0000', color: parseFloat(roi)>0?BRAND:'#ef4444' }}>
+                                  ROI {roi}%
+                                </span>
+                              </div>
+                            )}
+                          </div>
+                          {pvList.length > 0 ? (
+                            <div className="overflow-x-auto rounded-lg border" style={{ borderColor:'#2a2a2a' }}>
+                              <table className="dark-table">
+                                <thead>
+                                  <tr>
+                                    <th>PV</th>
+                                    <th>Fecha</th>
+                                    <th>Cliente</th>
+                                    <th>Vendedor</th>
+                                    <th>Match</th>
+                                    <th>Margen Bruto</th>
+                                    <th>Bonif. Terminal</th>
+                                    <th>Result. Bruto</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {pvList.map(v => (
+                                    <tr key={v.id}>
+                                      <td className="font-mono text-xs" style={{ color: BRAND }}>{v.pv_solicitud}</td>
+                                      <td className="text-xs text-gray-400">{v.fecha ? v.fecha.slice(0,10).split('-').reverse().join('/') : '-'}</td>
+                                      <td className="font-medium text-white text-xs">{v.nombre}</td>
+                                      <td className="text-xs text-gray-400">{v.vendedor||'-'}</td>
+                                      <td>
+                                        {v.metodo_match
+                                          ? <span className="badge badge-green text-xs">{v.metodo_match}</span>
+                                          : <span className="text-gray-600 text-xs">—</span>}
+                                      </td>
+                                      <td className="text-xs font-mono"
+                                        style={{ color: (v.margen_bruto||0)<0?'#ef4444':'#22c55e' }}>
+                                        {v.margen_bruto!=null ? fmt(v.margen_bruto) : '—'}
+                                      </td>
+                                      <td className="text-xs font-mono text-white">
+                                        {v.bonificacion_terminal!=null ? fmt(v.bonificacion_terminal) : '—'}
+                                      </td>
+                                      <td className="text-sm font-black"
+                                        style={{ color: (v.resultado_bruto||0)>=0?BRAND:'#ef4444' }}>
+                                        {v.resultado_bruto!=null ? fmt(v.resultado_bruto) : '—'}
+                                      </td>
+                                    </tr>
+                                  ))}
+                                  <tr style={{ background:'#0a0a0a', borderTop:'1px solid #2a2a2a' }}>
+                                    <td colSpan={5} className="font-bold text-xs text-white">TOTAL</td>
+                                    <td></td>
+                                    <td className="font-bold text-xs text-white">{fmt(totalBonif)}</td>
+                                    <td className="font-black text-sm" style={{ color: totalResultado>=0?BRAND:'#ef4444' }}>
+                                      {fmt(totalResultado)}
+                                    </td>
+                                  </tr>
+                                </tbody>
+                              </table>
+                            </div>
+                          ) : (
+                            <div className="text-xs p-3 rounded-lg" style={{ background:'#0f0f0f', color:'#4b5563' }}>
+                              Sin preventas vinculadas a esta campaña.
+                              Ejecutá el cruce en Asignados o vinculalas manualmente en Preventas.
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })()}
 
                     {/* Lista gastos */}
                     {gList.length > 0 && (
