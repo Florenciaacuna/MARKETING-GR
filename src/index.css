@@ -191,3 +191,23 @@ select.input-dark option { background: #1a1a1a; }
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
+
+/* Pencil edit icon */
+.pencil-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  cursor: pointer;
+  opacity: 0.6;
+  transition: opacity 0.15s, transform 0.15s;
+  flex-shrink: 0;
+}
+.pencil-icon:hover {
+  opacity: 1;
+  transform: scale(1.15);
+}
+.pencil-icon svg {
+  transform: rotate(-45deg);
+}
