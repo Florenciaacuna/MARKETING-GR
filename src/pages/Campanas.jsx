@@ -56,7 +56,7 @@ export default function Campanas() {
     // Leads, ventas y gastos paginados — superan límite de 1000 filas de Supabase
     const [leadsData, ventasData, gastosData] = await Promise.all([
       fetchAll('mkt_leads',  'campana_id',                 'campana_id'),
-      fetchAll('mkt_ventas', 'campana_id,resultado_bruto', 'campana_id'),
+      fetchAll('mkt_ventas', 'campana_id,resultado_bruto,gestoria', 'campana_id'),
       fetchAll('mkt_gastos', 'campana_id,monto',           null)
     ])
 
@@ -65,7 +65,13 @@ export default function Campanas() {
     const init = id => { if (!map[id]) map[id] = { leads:0, ventas:0, gasto:0 } }
 
     leadsData?.forEach(l => { init(l.campana_id); map[l.campana_id].leads++ })
-    ventasData?.forEach(v => { init(v.campana_id); map[v.campana_id].ventas++; map[v.campana_id].resultado = (map[v.campana_id].resultado||0)+(v.resultado_bruto||0) })
+    ventasData?.forEach(v => {
+      init(v.campana_id)
+      map[v.campana_id].ventas++
+      map[v.campana_id].resultado   = (map[v.campana_id].resultado||0)   + (v.resultado_bruto||0)
+      map[v.campana_id].gestoria    = (map[v.campana_id].gestoria||0)    + (v.gestoria||0)
+      map[v.campana_id].conGestoria = (map[v.campana_id].conGestoria||0) + (v.resultado_bruto||0) + (v.gestoria||0)
+    })
     gastosData?.forEach(g => { init(g.campana_id); map[g.campana_id].gasto += (g.monto||0) })
 
     setStats(map)
@@ -102,7 +108,7 @@ export default function Campanas() {
   async function loadPreventas(campanaId) {
     const { data } = await supabase
       .from('mkt_ventas')
-      .select('id,pv_solicitud,fecha,nombre,dni,vendedor,marca,metodo_match,margen_bruto,bonificacion_terminal,resultado_bruto')
+      .select('id,pv_solicitud,fecha,nombre,dni,vendedor,marca,metodo_match,margen_bruto,bonificacion_terminal,resultado_bruto,gestoria')
       .eq('campana_id', campanaId)
       .order('fecha', { ascending: false })
     setPreventas(prev => ({ ...prev, [campanaId]: data || [] }))
@@ -284,13 +290,27 @@ export default function Campanas() {
                     </div>
 
                     <div className="text-center px-2">
-                      {s.resultado && s.gasto > 0 ? (
-                        <div className="flex flex-col items-center">
-                          <div className="text-2xl font-black"
-                            style={{ color: s.resultado > s.gasto ? BRAND : '#ef4444' }}>
-                            {((s.resultado - s.gasto)/s.gasto*100).toFixed(1)}%
-                          </div>
-                          <div className="text-xs mt-0.5 font-bold uppercase" style={{ color:'#4b5563' }}>ROI</div>
+                      {s.gasto > 0 ? (
+                        <div className="flex flex-col items-center gap-0.5">
+                          {s.conGestoria > 0 && (
+                            <div>
+                              <div className="text-2xl font-black" style={{ color: s.conGestoria > s.gasto ? BRAND : '#ef4444' }}>
+                                {((s.conGestoria - s.gasto)/s.gasto*100).toFixed(1)}%
+                              </div>
+                              <div className="text-xs font-bold uppercase" style={{ color:'#4b5563' }}>ROI c/gest.</div>
+                            </div>
+                          )}
+                          {s.resultado > 0 && (
+                            <div className="text-xs" style={{ color:'#4b5563' }}>
+                              S/gest: {((s.resultado - s.gasto)/s.gasto*100).toFixed(1)}%
+                            </div>
+                          )}
+                          {!s.conGestoria && !s.resultado && (
+                            <div>
+                              <div className="text-2xl font-black" style={{ color:'#4b5563' }}>—</div>
+                              <div className="text-xs font-bold uppercase" style={{ color:'#374151' }}>ROI</div>
+                            </div>
+                          )}
                         </div>
                       ) : (
                         <div>
@@ -326,15 +346,23 @@ export default function Campanas() {
                             <div className="text-xs font-bold uppercase tracking-widest" style={{ color: BRAND }}>
                               Preventas vinculadas — {pvList.length}
                             </div>
-                            {roi && (
-                              <div className="flex items-center gap-3">
-                                <span className="text-xs text-gray-500">Resultado bruto: <span className="font-bold text-white">{fmt(totalResultado)}</span></span>
-                                <span className="text-xs font-black px-3 py-1 rounded-lg"
-                                  style={{ background: parseFloat(roi)>0?'#1a2e00':'#2e0000', color: parseFloat(roi)>0?BRAND:'#ef4444' }}>
-                                  ROI {roi}%
-                                </span>
-                              </div>
-                            )}
+                            {(() => {
+                                const totalGest = pvList.reduce((s,v)=>s+(v.gestoria||0),0)
+                                const totalConG = totalResultado + totalGest
+                                const roiConG = inversion > 0 && totalConG > 0 ? ((totalConG-inversion)/inversion*100).toFixed(1) : null
+                                return (
+                                  <div className="flex items-center gap-3 flex-wrap">
+                                    {roi && <span className="text-xs text-gray-500">S/gest: <span className="font-bold" style={{ color:'#9ca3af' }}>{roi}%</span></span>}
+                                    {roiConG && (
+                                      <span className="text-xs font-black px-3 py-1 rounded-lg"
+                                        style={{ background: parseFloat(roiConG)>0?'#1a2e00':'#2e0000', color: parseFloat(roiConG)>0?BRAND:'#ef4444' }}>
+                                        ROI c/gest: {roiConG}%
+                                      </span>
+                                    )}
+                                    {totalGest > 0 && <span className="text-xs text-gray-500">Gest: <span className="font-bold text-white">{fmt(totalGest)}</span></span>}
+                                  </div>
+                                )
+                              })()}
                           </div>
                           {pvList.length > 0 ? (
                             <div className="overflow-x-auto rounded-lg border" style={{ borderColor:'#2a2a2a' }}>
@@ -373,6 +401,12 @@ export default function Campanas() {
                                       <td className="text-sm font-black"
                                         style={{ color: (v.resultado_bruto||0)>=0?BRAND:'#ef4444' }}>
                                         {v.resultado_bruto!=null ? fmt(v.resultado_bruto) : '—'}
+                                      </td>
+                                      <td className="text-xs font-mono text-white">
+                                        {v.gestoria ? fmt(v.gestoria) : '—'}
+                                      </td>
+                                      <td className="text-sm font-black" style={{ color: BRAND }}>
+                                        {(v.resultado_bruto||v.gestoria) ? fmt((v.resultado_bruto||0)+(v.gestoria||0)) : '—'}
                                       </td>
                                     </tr>
                                   ))}
