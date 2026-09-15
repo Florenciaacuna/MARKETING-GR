@@ -61,11 +61,12 @@ export default function Dashboard() {
     setRubroFiltro(prev => prev.includes(r) ? prev.filter(x => x !== r) : [...prev, r])
   }
 
-  async function fetchAll(table, selectStr, notNullCol = null) {
+  async function fetchAll(table, selectStr, notNullCol = null, filters = []) {
     const PAGE = 1000; let all = [], from = 0
     while (true) {
       let q = supabase.from(table).select(selectStr).range(from, from + PAGE - 1)
       if (notNullCol) q = q.not(notNullCol, 'is', null)
+      filters.forEach(f => { q = f(q) })
       const { data } = await q
       if (!data?.length) break
       all = all.concat(data)
@@ -149,8 +150,19 @@ export default function Dashboard() {
       })))
     }
 
+    // --- Filtros para leads ---
+    const leadFilters = []
+    if (campanaFiltro) leadFilters.push(q => q.eq('campana_id', campanaFiltro))
+
+    // --- Filtros para ventas del bloque campañas ---
+    const ventaFilters = []
+    if (campanaFiltro) ventaFilters.push(q => q.eq('campana_id', campanaFiltro))
+    if (desde)         ventaFilters.push(q => q.gte('fecha', desde))
+    if (hasta)         ventaFilters.push(q => q.lte('fecha', hasta))
+    if (marcaFiltro.length > 0) ventaFilters.push(q => q.in('marca', marcaFiltro))
+
     // --- Origen de leads ---
-    const origenData = await fetchAll('mkt_leads', 'canal,origen', null)
+    const origenData = await fetchAll('mkt_leads', 'canal,origen', null, leadFilters)
     if (origenData) {
       const map = {}
       origenData.forEach(l => {
@@ -167,7 +179,7 @@ export default function Dashboard() {
     // --- Leads y ventas por campaña usando campana_id FK directo ---
     const [lCamp, vCampDirect, campList] = await Promise.all([
       fetchAll('mkt_leads',  'campana_id', 'campana_id'),
-      fetchAll('mkt_ventas', 'campana_id', 'campana_id'),
+      fetchAll('mkt_ventas', 'campana_id', 'campana_id', ventaFilters),
       supabase.from('mkt_campanas').select('id,codigo,nombre,marca,rubro').then(r => r.data || [])
     ])
     if (campList?.length) {
