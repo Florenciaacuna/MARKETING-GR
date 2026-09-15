@@ -27,11 +27,12 @@ export default function Campanas() {
 
   useEffect(() => { loadAll() }, [])
 
-  async function fetchAll(table, selectStr, notNullCol = null) {
+  async function fetchAll(table, selectStr, notNullCol = null, filters = []) {
     const PAGE = 1000; let all = [], from = 0
     while (true) {
       let q = supabase.from(table).select(selectStr).range(from, from + PAGE - 1)
       if (notNullCol) q = q.not(notNullCol, 'is', null)
+      filters.forEach(f => { q = f(q) })
       const { data, error } = await q
       if (error || !data?.length) break
       all = all.concat(data)
