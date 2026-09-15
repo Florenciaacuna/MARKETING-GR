@@ -167,18 +167,17 @@ export default function Campanas() {
 
       {/* KPIs */}
       {kpis && (
-        <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(6, 1fr)' }}>
+        <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(5, 1fr)' }}>
           {[
             { label:'INVERSIÓN TOTAL', value: fmt(kpis.totalInversion), accent:false },
             { label:'LEADS',           value: fmtN(kpis.totalLeads),     accent:false },
             { label:'PREVENTAS',       value: fmtN(kpis.totalVentas),    accent:true  },
             { label:'CONVERSIÓN',      value: pct(kpis.totalVentas, kpis.totalLeads), accent:false },
-            { label:'COSTO POR LEAD',  value: fmt(kpis.costoLead),       accent:false },
             {
-              label: kpis.roi !== null ? 'ROI' : 'COSTO X PREVENTA',
-              value: kpis.roi !== null ? kpis.roi+'%' : fmt(kpis.costoVenta),
+              label: 'ROI',
+              value: kpis.roi !== null ? kpis.roi+'%' : '—',
               accent: kpis.roi !== null && parseFloat(kpis.roi) > 0,
-              roi: kpis.roi !== null
+              roi: true
             },
           ].map(k => (
             <div key={k.label} className="rounded-xl p-3 border"
@@ -240,10 +239,10 @@ export default function Campanas() {
                 {/* HEADER */}
                 <div className="cursor-pointer px-4 py-3 flex items-center gap-4"
                   style={{ background: isOpen ? '#1a2e00' : '#111', transition:'background 0.15s' }}
-                  onClick={() => toggle(c.id)}>
+                  onClick={() => toggle(c.id)} style={{ ...{}, minHeight:72 }}>
 
                   {/* Nombre y badges */}
-                  <div style={{ flex:'0 0 260px', minWidth:0 }}>
+                  <div style={{ flex:'0 0 220px', minWidth:0 }}>
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="font-bold text-white text-sm">{c.nombre}</span>
                       {c.codigo && (
@@ -261,51 +260,42 @@ export default function Campanas() {
                   {/* Métricas en línea */}
                   <div className="flex gap-6 flex-1">
 
-                    <div className="text-center">
-                      <div className="text-sm font-bold text-white">{fmtN(s.leads)}</div>
-                      <div className="text-xs" style={{ color:'#4b5563' }}>Leads</div>
+                    <div className="text-center px-2">
+                      <div className="text-xl font-black text-white">{fmtN(s.leads)}</div>
+                      <div className="text-xs mt-0.5" style={{ color:'#4b5563' }}>LEADS</div>
                     </div>
 
-                    <div className="text-center">
-                      <div className="text-sm font-bold" style={{ color: BRAND }}>{fmtN(s.ventas)}</div>
-                      <div className="text-xs" style={{ color:'#4b5563' }}>Preventas</div>
+                    <div className="text-center px-2">
+                      <div className="text-xl font-black" style={{ color: BRAND }}>{fmtN(s.ventas)}</div>
+                      <div className="text-xs mt-0.5" style={{ color:'#4b5563' }}>PREVENTAS</div>
                     </div>
 
-                    <div className="text-center">
-                      <div className="text-sm font-bold text-white">{pct(s.ventas, s.leads)}</div>
-                      <div className="text-xs" style={{ color:'#4b5563' }}>Conv.</div>
+                    <div className="text-center px-2">
+                      <div className="text-xl font-black text-white">{pct(s.ventas, s.leads)}</div>
+                      <div className="text-xs mt-0.5" style={{ color:'#4b5563' }}>CONV.</div>
                     </div>
 
-                    <div className="text-center">
-                      <div className="text-sm font-bold text-white">
+                    <div className="text-center px-2">
+                      <div className="text-xl font-black text-white">
                         {s.gasto > 0 ? fmt(s.gasto) : <span style={{ color:'#4b5563' }}>—</span>}
                       </div>
-                      <div className="text-xs" style={{ color:'#4b5563' }}>Invertido</div>
+                      <div className="text-xs mt-0.5" style={{ color:'#4b5563' }}>INVERTIDO</div>
                     </div>
 
-                    <div className="text-center">
-                      <div className="text-sm font-bold text-white">
-                        {cpl > 0 ? fmt(cpl) : <span style={{ color:'#4b5563' }}>—</span>}
-                      </div>
-                      <div className="text-xs" style={{ color:'#4b5563' }}>$/Lead</div>
-                    </div>
-
-                    <div className="text-center">
+                    <div className="text-center px-2">
                       {s.resultado && s.gasto > 0 ? (
-                        <>
-                          <div className="text-sm font-bold"
+                        <div className="flex flex-col items-center">
+                          <div className="text-2xl font-black"
                             style={{ color: s.resultado > s.gasto ? BRAND : '#ef4444' }}>
                             {((s.resultado - s.gasto)/s.gasto*100).toFixed(1)}%
                           </div>
-                          <div className="text-xs" style={{ color:'#4b5563' }}>ROI</div>
-                        </>
+                          <div className="text-xs mt-0.5 font-bold uppercase" style={{ color:'#4b5563' }}>ROI</div>
+                        </div>
                       ) : (
-                        <>
-                          <div className="text-sm font-bold text-white">
-                            {cpv > 0 ? fmt(cpv) : <span style={{ color:'#4b5563' }}>—</span>}
-                          </div>
-                          <div className="text-xs" style={{ color:'#4b5563' }}>$/Preventa</div>
-                        </>
+                        <div>
+                          <div className="text-xl font-black" style={{ color:'#4b5563' }}>—</div>
+                          <div className="text-xs mt-0.5 font-bold uppercase" style={{ color:'#374151' }}>ROI</div>
+                        </div>
                       )}
                     </div>
 
