@@ -43,6 +43,8 @@ export default function Dashboard() {
   const [marcaFiltro,  setMarcaFiltro]  = useState([])
   const [rubroFiltro,  setRubroFiltro]  = useState([])
   const [kpis,         setKpis]         = useState(null)
+  const [campanaFiltro, setCampanaFiltro] = useState('')
+  const [campanaList,   setCampanaList]   = useState([])
   const [porMarca,     setPorMarca]     = useState([])
   const [historico,    setHistorico]    = useState([])
   const [campLeads,    setCampLeads]    = useState([])
@@ -63,6 +65,7 @@ export default function Dashboard() {
       if (desde) q = q.gte('fecha', desde)
       if (hasta) q = q.lte('fecha', hasta)
       if (marcaFiltro.length > 0) q = q.in('marca', marcaFiltro)
+      if (campanaFiltro) q = q.eq('campana_id', campanaFiltro)
       return q
     }
 
@@ -158,9 +161,15 @@ export default function Dashboard() {
     }
 
     setLoading(false)
-  }, [desde, hasta, marcaFiltro, rubroFiltro])
+  }, [desde, hasta, marcaFiltro, rubroFiltro, campanaFiltro])
 
   useEffect(() => { load() }, [load])
+
+  useEffect(() => {
+    supabase.from('mkt_campanas').select('id,nombre,marca,rubro')
+      .eq('activo', true).order('nombre')
+      .then(({ data }) => setCampanaList(data || []))
+  }, [])
 
   const pctConversion = fmtPct(kpis ? kpis.ventasConLead : 0, kpis ? kpis.totalVentas : 0)
   const pieMarcas     = porMarca.slice(0,8).map((m,i) => ({ name: m.marca, value: m.ventas, leads: m.leads }))
@@ -172,57 +181,64 @@ export default function Dashboard() {
 
       {/* FILTROS */}
       <div className="card">
-        <div className="filter-bar" style={{ marginBottom:12 }}>
-          <span className="text-xs text-gray-500 flex-shrink-0">Fecha:</span>
-          <div className="filter-sep"/>
+        <div className="filter-bar" style={{ flexWrap:'wrap', gap:'8px 12px' }}>
+
+          {/* Fecha */}
           <DatePicker label="Desde" value={desde} onChange={setDesde} maxDate={hasta||undefined} />
           <DatePicker label="Hasta" value={hasta} onChange={setHasta} minDate={desde||undefined} />
           <div className="filter-sep"/>
+
+          {/* Accesos rápidos fecha */}
           <button onClick={() => { const d=new Date(),m=String(d.getMonth()+1).padStart(2,'0'); setDesde(d.getFullYear()+'-'+m+'-01'); setHasta(d.getFullYear()+'-'+m+'-31') }}
             className="text-xs px-2.5 py-1 rounded-lg flex-shrink-0" style={{ background:'#1a2e00', color:BRAND, border:'1px solid #2a3d00' }}>Mes actual</button>
           <button onClick={() => { const y=new Date().getFullYear(); setDesde(y+'-01-01'); setHasta(y+'-12-31') }}
             className="text-xs px-2.5 py-1 rounded-lg flex-shrink-0" style={{ background:'#1a2e00', color:BRAND, border:'1px solid #2a3d00' }}>Año</button>
           <div className="filter-sep"/>
-          <button onClick={() => { setDesde(''); setHasta(''); setMarcaFiltro([]); setRubroFiltro([]) }}
+
+          {/* Marca */}
+          <span className="text-xs text-gray-600 font-bold uppercase flex-shrink-0">Marca</span>
+          {MARCAS.map(m => (
+            <button key={m} onClick={() => toggleMarca(m)}
+              className="text-xs px-2.5 py-1 rounded-lg font-medium flex-shrink-0 transition-all"
+              style={{
+                background: marcaFiltro.includes(m) ? BRAND : '#1a1a1a',
+                color:      marcaFiltro.includes(m) ? '#000' : '#6b7280',
+                border:    `1px solid ${marcaFiltro.includes(m) ? BRAND : '#2a2a2a'}`
+              }}>{m}</button>
+          ))}
+          <div className="filter-sep"/>
+
+          {/* Rubro */}
+          <span className="text-xs text-gray-600 font-bold uppercase flex-shrink-0">Rubro</span>
+          {RUBROS.map(r => (
+            <button key={r} onClick={() => toggleRubro(r)}
+              className="text-xs px-2.5 py-1 rounded-lg font-medium flex-shrink-0 transition-all"
+              style={{
+                background: rubroFiltro.includes(r) ? BRAND : '#1a1a1a',
+                color:      rubroFiltro.includes(r) ? '#000' : '#6b7280',
+                border:    `1px solid ${rubroFiltro.includes(r) ? BRAND : '#2a2a2a'}`
+              }}>{r}</button>
+          ))}
+          <div className="filter-sep"/>
+
+          {/* Campaña */}
+          <span className="text-xs text-gray-600 font-bold uppercase flex-shrink-0">Campaña</span>
+          <select className="input-dark flex-shrink-0" style={{ minWidth:220, maxWidth:320 }}
+            value={campanaFiltro} onChange={e => setCampanaFiltro(e.target.value)}>
+            <option value="">Todas</option>
+            {campanaList
+              .filter(c => marcaFiltro.length === 0 || marcaFiltro.includes(c.marca))
+              .filter(c => rubroFiltro.length === 0 || rubroFiltro.includes(c.rubro))
+              .map(c => (
+                <option key={c.id} value={c.id}>{c.nombre}</option>
+              ))}
+          </select>
+          <div className="filter-sep"/>
+
+          {/* Limpiar */}
+          <button onClick={() => { setDesde(''); setHasta(''); setMarcaFiltro([]); setRubroFiltro([]); setCampanaFiltro('') }}
             className="btn-ghost text-xs flex-shrink-0">Limpiar todo</button>
-        </div>
 
-        {/* Filtro marca */}
-        <div className="mb-3">
-          <div className="text-xs text-gray-600 uppercase font-bold mb-2" style={{ letterSpacing:'0.08em' }}>Marca</div>
-          <div className="flex flex-wrap gap-2">
-            {MARCAS.map(m => (
-              <button key={m} onClick={() => toggleMarca(m)}
-                className="text-xs px-3 py-1 rounded-lg font-medium transition-all"
-                style={{
-                  background: marcaFiltro.includes(m) ? BRAND : '#1a1a1a',
-                  color:      marcaFiltro.includes(m) ? '#000' : '#6b7280',
-                  border:    `1px solid ${marcaFiltro.includes(m) ? BRAND : GRAY3}`
-                }}>{m}</button>
-            ))}
-            {marcaFiltro.length > 0 && (
-              <button onClick={() => setMarcaFiltro([])} className="text-xs text-gray-600 hover:text-gray-300">Todas</button>
-            )}
-          </div>
-        </div>
-
-        {/* Filtro rubro */}
-        <div>
-          <div className="text-xs text-gray-600 uppercase font-bold mb-2" style={{ letterSpacing:'0.08em' }}>Rubro</div>
-          <div className="flex flex-wrap gap-2">
-            {RUBROS.map(r => (
-              <button key={r} onClick={() => toggleRubro(r)}
-                className="text-xs px-3 py-1 rounded-lg font-medium transition-all"
-                style={{
-                  background: rubroFiltro.includes(r) ? BRAND : '#1a1a1a',
-                  color:      rubroFiltro.includes(r) ? '#000' : '#6b7280',
-                  border:    `1px solid ${rubroFiltro.includes(r) ? BRAND : GRAY3}`
-                }}>{r}</button>
-            ))}
-            {rubroFiltro.length > 0 && (
-              <button onClick={() => setRubroFiltro([])} className="text-xs text-gray-600 hover:text-gray-300">Todos</button>
-            )}
-          </div>
         </div>
       </div>
 
