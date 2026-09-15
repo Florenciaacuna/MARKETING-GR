@@ -1,3 +1,4 @@
+import PencilIcon from '../components/PencilIcon'
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 import { parseFile, normalizePVRow } from '../lib/parsers'
@@ -301,7 +302,7 @@ export default function Ventas() {
                             <span className="text-xs" style={{ color:'#4b5563' }}>— sin lead</span>
                           )}
                           <div className="flex gap-1 flex-shrink-0">
-                            <span className="text-xs" style={{ color:'#3a3a3a' }}>✏</span>
+                            <PencilIcon size={13} color="#555" />
                             {lead && (
                               <span className="text-xs text-gray-600 hover:text-red-400"
                                 onClick={e => { e.stopPropagation(); desvincularLead(v.id) }}>✕</span>
@@ -338,7 +339,7 @@ export default function Ventas() {
                           ) : (
                             <span className="text-xs" style={{ color:'#4b5563' }}>— asignar</span>
                           )}
-                          <span className="text-xs ml-1" style={{ color:'#3a3a3a' }}>✏</span>
+                          <PencilIcon size={13} color="#555" />
                         </div>
                       )}
                     </td>
