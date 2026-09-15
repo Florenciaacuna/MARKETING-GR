@@ -252,6 +252,7 @@ export default function Campanas() {
                 {/* HEADER */}
                 <div className="cursor-pointer px-4 py-3 flex items-center gap-4"
                   style={{ background: isOpen ? '#1a2e00' : '#111', transition:'background 0.15s', minHeight:72 }}
+                  onClick={() => toggle(c.id)}>
 
 
                   {/* Nombre y badges */}
