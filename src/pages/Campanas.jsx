@@ -27,6 +27,20 @@ export default function Campanas() {
 
   useEffect(() => { loadAll() }, [])
 
+  async function fetchAll(table, selectStr, notNullCol = null) {
+    const PAGE = 1000; let all = [], from = 0
+    while (true) {
+      let q = supabase.from(table).select(selectStr).range(from, from + PAGE - 1)
+      if (notNullCol) q = q.not(notNullCol, 'is', null)
+      const { data, error } = await q
+      if (error || !data?.length) break
+      all = all.concat(data)
+      if (data.length < PAGE) break
+      from += PAGE
+    }
+    return all
+  }
+
   async function loadAll() {
     setLoading(true)
 
@@ -39,25 +53,12 @@ export default function Campanas() {
 
     if (!camps?.length) { setLoading(false); return }
 
-    // Leads por campaña (bulk)
-    const { data: leadsData } = await supabase
-      .from('mkt_leads')
-      .select('campana_id')
-      .not('campana_id', 'is', null)
-      .limit(60000)
-
-    // Ventas por campaña (bulk) — incluye resultado_bruto
-    const { data: ventasData } = await supabase
-      .from('mkt_ventas')
-      .select('campana_id,resultado_bruto')
-      .not('campana_id', 'is', null)
-      .limit(20000)
-
-    // Gastos por campaña (bulk sum)
-    const { data: gastosData } = await supabase
-      .from('mkt_gastos')
-      .select('campana_id, monto')
-      .limit(10000)
+    // Leads, ventas y gastos paginados — superan límite de 1000 filas de Supabase
+    const [leadsData, ventasData, gastosData] = await Promise.all([
+      fetchAll('mkt_leads',  'campana_id',                 'campana_id'),
+      fetchAll('mkt_ventas', 'campana_id,resultado_bruto', 'campana_id'),
+      fetchAll('mkt_gastos', 'campana_id,monto',           null)
+    ])
 
     // Agrupar en JS
     const map = {}
