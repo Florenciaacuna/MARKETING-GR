@@ -179,3 +179,30 @@ export function normalizePVRow(row) {
     fuente:                    'pv_vinculadas',
   }
 }
+
+export function normalizeEntregaRow(row) {
+  const preventa = String(row['PV/SOLICITUD'] || row['PREVENTA'] || row['preventa'] || '').trim()
+  if (!preventa) return null
+
+  const rawFecha = row['FECHA'] || row['FECHA ENTREGA'] || row['fecha_entrega'] || ''
+  let fecha = null
+  if (rawFecha instanceof Date) {
+    fecha = rawFecha.getFullYear() + '-' +
+      String(rawFecha.getMonth()+1).padStart(2,'0') + '-' +
+      String(rawFecha.getDate()).padStart(2,'0')
+  } else {
+    fecha = normalizeDate(rawFecha)
+  }
+
+  const tipo = String(row['TIPO'] || row['tipo_preventa'] || '').trim()
+  if (tipo.toUpperCase().includes('VENTA ESPECIAL')) return null
+
+  return {
+    preventa,
+    fecha_entrega: fecha,
+    sistema:       row['SISTEMA'] || row['sistema'] || null,
+    tipo_preventa: tipo || null,
+    vendedor:      row['VENDEDOR'] || row['vendedor'] || null,
+    salon:         row['SALON'] || row['salon'] || row['EMPRESA'] || null,
+  }
+}
