@@ -182,7 +182,7 @@ export default function Asignados() {
       if (vP && byJobSeq.has(vP))        { lead = byJobSeq.get(vP); metodo = 'proceso';    mP++ }
       if (!lead && vD && byDNI.has(vD))  { lead = byDNI.get(vD);    metodo = 'dni';        mD++ }
       if (!lead) { for (const p of vPhones) if (byPhone.has(p))  { lead = byPhone.get(p);  metodo = 'telefono';  mT++;  break } }
-      if (!lead) { for (const p of vPhones) { const p8 = p.slice(-8); if (p8.length === 8 && byPhone8.has(p8)) { lead = byPhone8.get(p8); metodo = 'tel_parcial'; mT8++; break } } }
+      // tel_parcial removido — generaba falsos positivos con últimos 8 dígitos
       if (!lead) sinM++
       updates.push({ id: v.id, lead_id: lead ? lead.id : null, campana_id: lead ? lead.campana_id : null, metodo_match: metodo, lead_origen: lead ? lead.origen : null })
     }
