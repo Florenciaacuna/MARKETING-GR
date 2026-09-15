@@ -11,7 +11,8 @@ const PALETTE = ['#B5E000','#8ca800','#5f7200','#d4f000','#a3c200','#3d5200','#6
 const GRAY3   = '#2a2a2a'
 
 const fmt    = n  => (n || 0).toLocaleString('es-AR')
-const fmtPct = (a,b) => b > 0 ? (a * 100 / b).toFixed(1) + '%' : '0%'
+const fmtPct   = (a,b) => b > 0 ? (a * 100 / b).toFixed(1) + '%' : '0%'
+const fmtPesos = n => (n||0).toLocaleString('es-AR', { style:'currency', currency:'ARS', maximumFractionDigits:0 })
 
 const MARCAS = ['KIARA','CIARA','PEARA','MOVILIS','SALRA','HUERTAS','LAFABRICAUS','SELECCIÓN']
 const RUBROS = ['0KM','PDA','USADOS','V.E','COMPRA','POSTVENTA']
@@ -45,6 +46,8 @@ export default function Dashboard() {
   const [kpis,         setKpis]         = useState(null)
   const [campanaFiltro, setCampanaFiltro] = useState('')
   const [campanaList,   setCampanaList]   = useState([])
+  const [campDetalle,   setCampDetalle]   = useState(null) // { camp, preventas, gastos }
+  const [loadingDet,    setLoadingDet]    = useState(false)
   const [porMarca,     setPorMarca]     = useState([])
   const [historico,    setHistorico]    = useState([])
   const [campLeads,    setCampLeads]    = useState([])
@@ -55,6 +58,20 @@ export default function Dashboard() {
   }
   function toggleRubro(r) {
     setRubroFiltro(prev => prev.includes(r) ? prev.filter(x => x !== r) : [...prev, r])
+  }
+
+  async function fetchAll(table, selectStr, notNullCol = null) {
+    const PAGE = 1000; let all = [], from = 0
+    while (true) {
+      let q = supabase.from(table).select(selectStr).range(from, from + PAGE - 1)
+      if (notNullCol) q = q.not(notNullCol, 'is', null)
+      const { data } = await q
+      if (!data?.length) break
+      all = all.concat(data)
+      if (data.length < PAGE) break
+      from += PAGE
+    }
+    return all
   }
 
   const load = useCallback(async () => {
@@ -132,18 +149,18 @@ export default function Dashboard() {
     }
 
     // --- Leads y ventas por campaña usando campana_id FK directo ---
-    const [{ data: lCamp }, { data: vCampDirect }, { data: campList }] = await Promise.all([
-      supabase.from('mkt_leads').select('campana_id').not('campana_id','is',null).limit(60000),
-      supabase.from('mkt_ventas').select('campana_id').not('campana_id','is',null).limit(20000),
-      supabase.from('mkt_campanas').select('id,codigo,nombre,marca,rubro')
+    const [lCamp, vCampDirect, campList] = await Promise.all([
+      fetchAll('mkt_leads',  'campana_id', 'campana_id'),
+      fetchAll('mkt_ventas', 'campana_id', 'campana_id'),
+      supabase.from('mkt_campanas').select('id,codigo,nombre,marca,rubro').then(r => r.data || [])
     ])
-    if (campList) {
+    if (campList?.length) {
       const campMap = {}
       campList.forEach(c => { campMap[c.id] = c })
       const lMap = {}
-      lCamp?.forEach(l => { lMap[l.campana_id] = (lMap[l.campana_id]||0)+1 })
+      lCamp.forEach(l => { lMap[l.campana_id] = (lMap[l.campana_id]||0)+1 })
       const vMap = {}
-      vCampDirect?.forEach(v => { vMap[v.campana_id] = (vMap[v.campana_id]||0)+1 })
+      vCampDirect.forEach(v => { vMap[v.campana_id] = (vMap[v.campana_id]||0)+1 })
       const result = []
       Object.entries(vMap).forEach(([id, ventas]) => {
         const camp = campMap[id]
@@ -159,10 +176,23 @@ export default function Dashboard() {
   useEffect(() => { load() }, [load])
 
   useEffect(() => {
-    supabase.from('mkt_campanas').select('id,nombre,marca,rubro')
+    supabase.from('mkt_campanas').select('id,codigo,nombre,marca,rubro')
       .eq('activo', true).order('nombre')
       .then(({ data }) => setCampanaList(data || []))
   }, [])
+
+  useEffect(() => {
+    if (!campanaFiltro) { setCampDetalle(null); return }
+    setLoadingDet(true)
+    Promise.all([
+      supabase.from('mkt_campanas').select('id,codigo,nombre,marca,rubro,activo').eq('id', campanaFiltro).single(),
+      supabase.from('mkt_ventas').select('id,pv_solicitud,fecha,nombre,dni,vendedor,metodo_match,margen_bruto,bonificacion_terminal,resultado_bruto,gestoria').eq('campana_id', campanaFiltro).order('fecha', { ascending: false }),
+      supabase.from('mkt_gastos').select('id,concepto,monto,fecha,proveedor').eq('campana_id', campanaFiltro).order('fecha', { ascending: false })
+    ]).then(([{ data: camp }, { data: preventas }, { data: gastos }]) => {
+      setCampDetalle({ camp, preventas: preventas||[], gastos: gastos||[] })
+      setLoadingDet(false)
+    })
+  }, [campanaFiltro])
 
   const pctConversion = fmtPct(kpis ? kpis.ventasConLead : 0, kpis ? kpis.totalVentas : 0)
   const pieMarcas     = porMarca.slice(0,8).map((m,i) => ({ name: m.marca, value: m.ventas, leads: m.leads }))
@@ -251,7 +281,122 @@ export default function Dashboard() {
         ))}
       </div>
 
-      {/* TABLA POR MARCA + TORTAS */}
+      {/* DETALLE DE CAMPAÑA */}
+      {campanaFiltro && (
+        <div className="space-y-4">
+          {loadingDet ? (
+            <div className="card text-center text-xs py-6" style={{ color:'#4b5563' }}>Cargando campaña...</div>
+          ) : campDetalle && (() => {
+            const inv  = (campDetalle.gastos||[]).reduce((s,g)=>s+(g.monto||0),0)
+            const res  = (campDetalle.preventas||[]).reduce((s,v)=>s+(v.resultado_bruto||0),0)
+            const gest = (campDetalle.preventas||[]).reduce((s,v)=>s+(v.gestoria||0),0)
+            const resConGest = res + gest
+            const roi  = inv>0 && res>0 ? ((res-inv)/inv*100).toFixed(1) : null
+            const roiConGest = inv>0 && resConGest>0 ? ((resConGest-inv)/inv*100).toFixed(1) : null
+            const pvC  = campDetalle.preventas?.length || 0
+            return (
+              <>
+                <div className="rounded-xl p-5 border" style={{ background:'#1a2e00', borderColor: BRAND }}>
+                  <div className="flex items-center justify-between flex-wrap gap-4">
+                    <div>
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="text-xl font-black text-white">{campDetalle.camp?.nombre}</span>
+                        {campDetalle.camp?.codigo && (
+                          <span className="font-mono text-xs px-2 py-0.5 rounded" style={{ background:'#2a3d00', color:BRAND }}>[{campDetalle.camp.codigo}]</span>
+                        )}
+                      </div>
+                      <div className="text-xs" style={{ color:'#6b7280' }}>{campDetalle.camp?.marca} · {campDetalle.camp?.rubro}</div>
+                    </div>
+                    <div className="flex gap-8 flex-wrap">
+                      {[
+                        { label:'LEADS',     val: fmt(kpis?.totalLeads||0),  color:'#fff'  },
+                        { label:'PREVENTAS', val: fmt(pvC),                   color: BRAND  },
+                        { label:'INVERSIÓN', val: fmtPesos(inv),              color:'#fff'  },
+                        { label:'RESULTADO', val: fmtPesos(res),              color: res>=0?BRAND:'#ef4444' },
+                        { label:'ROI S/GEST',  val: roi?roi+'%':'—',              color: roi?(parseFloat(roi)>0?'#9ca3af':'#ef4444'):'#4b5563', big:false },
+                        { label:'ROI C/GEST',  val: roiConGest?roiConGest+'%':'—', color: roiConGest?(parseFloat(roiConGest)>0?BRAND:'#ef4444'):'#4b5563', big:true },
+                      ].map(k => (
+                        <div key={k.label} className="text-center">
+                          <div className={k.big?'text-3xl font-black':'text-xl font-black'} style={{ color:k.color }}>{k.val}</div>
+                          <div className="text-xs font-bold uppercase mt-0.5" style={{ color:'#4b5563' }}>{k.label}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                {campDetalle.gastos?.length > 0 && (
+                  <div className="card">
+                    <div className="section-header mb-3">
+                      <h2>Inversión de la campaña</h2>
+                      <span className="count-badge">{fmtPesos(inv)}</span>
+                    </div>
+                    <div className="overflow-x-auto rounded-lg border" style={{ borderColor:'#2a2a2a' }}>
+                      <table className="dark-table">
+                        <thead><tr><th>Fecha</th><th>Concepto</th><th>Proveedor</th><th>Monto</th></tr></thead>
+                        <tbody>
+                          {campDetalle.gastos.map(g => (
+                            <tr key={g.id}>
+                              <td className="text-xs text-gray-400">{g.fecha?.slice(0,10).split('-').reverse().join('/')}</td>
+                              <td className="text-white text-xs font-medium">{g.concepto}</td>
+                              <td className="text-xs text-gray-400">{g.proveedor||'—'}</td>
+                              <td className="font-bold text-xs" style={{ color:BRAND }}>{fmtPesos(g.monto)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+
+                <div className="card">
+                  <div className="section-header mb-3">
+                    <h2>Clientes — Preventas vinculadas</h2>
+                    <div className="flex items-center gap-3">
+                      <span className="text-xs" style={{ color:'#9ca3af' }}>Resultado bruto: <span className="font-bold text-white">{fmtPesos(res)}</span></span>
+                      {roi && <span className="text-xs" style={{ color:'#6b7280' }}>S/gest: {roi}%</span>}
+                    {roiConGest && <span className="text-xs font-black px-3 py-1 rounded-lg" style={{ background:parseFloat(roiConGest)>0?'#1a2e00':'#2e0000', color:parseFloat(roiConGest)>0?BRAND:'#ef4444' }}>ROI c/gest: {roiConGest}%</span>}
+                    </div>
+                  </div>
+                  {pvC > 0 ? (
+                    <div className="overflow-x-auto rounded-lg border" style={{ borderColor:'#2a2a2a' }}>
+                      <table className="dark-table">
+                        <thead><tr><th>PV</th><th>Fecha</th><th>Cliente</th><th>Vendedor</th><th>Match</th><th>Margen Bruto</th><th>Bonif. Terminal</th><th>Result. Bruto</th></tr></thead>
+                        <tbody>
+                          {campDetalle.preventas.map(v => (
+                            <tr key={v.id}>
+                              <td className="font-mono text-xs" style={{ color:BRAND }}>{v.pv_solicitud}</td>
+                              <td className="text-xs text-gray-400">{v.fecha?.slice(0,10).split('-').reverse().join('/')}</td>
+                              <td className="font-bold text-white text-xs">{v.nombre}</td>
+                              <td className="text-xs text-gray-400">{v.vendedor||'—'}</td>
+                              <td>{v.metodo_match?<span className="badge badge-green text-xs">{v.metodo_match}</span>:<span className="text-gray-600 text-xs">—</span>}</td>
+                              <td className="text-xs font-mono" style={{ color:(v.margen_bruto||0)<0?'#ef4444':'#22c55e' }}>{v.margen_bruto!=null?fmtPesos(v.margen_bruto):'—'}</td>
+                              <td className="text-xs font-mono text-white">{v.bonificacion_terminal!=null?fmtPesos(v.bonificacion_terminal):'—'}</td>
+                              <td className="text-sm font-black" style={{ color:(v.resultado_bruto||0)>=0?BRAND:'#ef4444' }}>{v.resultado_bruto!=null?fmtPesos(v.resultado_bruto):'—'}</td>
+                              <td className="text-xs text-white">{v.gestoria?fmtPesos(v.gestoria):'—'}</td>
+                              <td className="text-sm font-black" style={{ color:BRAND }}>{(v.resultado_bruto||v.gestoria)?fmtPesos((v.resultado_bruto||0)+(v.gestoria||0)):'—'}</td>
+                            </tr>
+                          ))}
+                          <tr style={{ background:'#0a0a0a', borderTop:'1px solid #2a2a2a' }}>
+                            <td colSpan={5} className="font-bold text-xs text-white">TOTAL</td>
+                            <td></td>
+                            <td className="font-bold text-xs text-white">{fmtPesos(campDetalle.preventas.reduce((s,v)=>s+(v.bonificacion_terminal||0),0))}</td>
+                            <td className="font-black text-sm" style={{ color:res>=0?BRAND:'#ef4444' }}>{fmtPesos(res)}</td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : (
+                    <div className="text-xs py-4 text-center" style={{ color:'#4b5563' }}>Sin preventas vinculadas.</div>
+                  )}
+                </div>
+              </>
+            )
+          })()}
+        </div>
+      )}
+
+            {/* TABLA POR MARCA + TORTAS */}
       <div className="grid gap-4" style={{ gridTemplateColumns:'1.2fr 1fr 1fr' }}>
 
         {/* Tabla por marca */}
