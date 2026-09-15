@@ -1,16 +1,18 @@
-export default function PencilIcon({ size = 14, color = '#B5E000', style = {} }) {
+export default function PencilIcon({ size = 14, color = '#f59e0b', style = {}, onClick }) {
   return (
-    <span className="pencil-icon" style={style}>
+    <span
+      onClick={onClick}
+      style={{ display:'inline-flex', alignItems:'center', justifyContent:'center',
+               cursor: onClick ? 'pointer' : 'default', flexShrink:0, ...style }}>
       <svg
         width={size}
         height={size}
         viewBox="0 0 24 24"
-        fill="none"
-        stroke={color}
-        strokeWidth="2.5"
-        strokeLinecap="round"
-        strokeLinejoin="round">
-        <path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/>
+        fill={color}
+        xmlns="http://www.w3.org/2000/svg">
+        {/* Pencil body */}
+        <path d="M20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/>
+        <path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25z" opacity="0.85"/>
       </svg>
     </span>
   )
