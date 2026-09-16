@@ -63,7 +63,7 @@ export default function Asignados() {
         if (!d) return
         setCodigosCampana([...new Set(d.map(r => r.codigo_campana).filter(Boolean))].sort())
       })
-    supabase.from('mkt_campanas').select('id,nombre').order('nombre')
+    supabase.from('mkt_campanas').select('id,codigo,nombre').order('nombre')
       .then(({ data: d }) => setCampanas(d || []))
     supabase.from('mkt_leads').select('origen').not('origen','is',null)
       .then(({ data: d }) => {
@@ -296,11 +296,17 @@ export default function Asignados() {
           <input className="input-dark" style={{ width: 200 }} placeholder="Buscar cliente, DNI, PV..."
             value={filters.search} onChange={e => sf('search', e.target.value)} />
           <div className="filter-sep"/>
-          <select className="input-dark" style={{ width:200 }} value={filters.campana_id||''} onChange={e => sf('campana_id', e.target.value)}>
+          <select className="input-dark" style={{ width:200 }} value={filters.campana_id === '__con__' ? '' : (filters.campana_id||'')} onChange={e => sf('campana_id', e.target.value)}>
             <option value="">Campaña: todas</option>
-            <option value="__con__">— Solo con campaña</option>
             {campanas.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
           </select>
+          <label className="flex items-center gap-2 text-xs text-gray-400 cursor-pointer flex-shrink-0">
+            <input type="checkbox"
+              checked={filters.campana_id === '__con__'}
+              onChange={e => sf('campana_id', e.target.checked ? '__con__' : '')}
+              className="accent-[#B5E000]" style={{ width:14, height:14 }} />
+            Con campaña
+          </label>
           <select className="input-dark" style={{ width: 140 }} value={filters.tipo} onChange={e => sf('tipo', e.target.value)}>
             <option value="">Tipo: todos</option>
             <option>0KM</option>
@@ -400,7 +406,12 @@ export default function Asignados() {
 
                         <td>
                           <div className="flex flex-col gap-0.5">
-                            {lead && lead.codigo_campana && <span className="badge badge-green" style={{fontSize:'0.6rem'}}>[{lead.codigo_campana}]</span>}
+                            {lead && lead.codigo_campana && (
+                              (() => {
+                                const camp = campanas.find(c => c.codigo && c.codigo.toLowerCase() === lead.codigo_campana.toLowerCase())
+                                return <span className="text-xs" style={{ color:'#B5E000' }}>{camp ? camp.nombre : `[${lead.codigo_campana}]`}</span>
+                              })()
+                            )}
                             <div className="cursor-pointer" onClick={() => !editing && setEditing({ id: v.id, field: 'campana_id', value: v.campana_id || '', leadId: null })}>
                               {editing && editing.id === v.id && editing.field === 'campana_id' ? (
                                 <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
