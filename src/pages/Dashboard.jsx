@@ -91,6 +91,8 @@ export default function Dashboard() {
     // --- KPIs globales ---
     let leadsQuery = supabase.from('mkt_leads').select('*',{count:'exact',head:true})
     if (campanaFiltro) leadsQuery = leadsQuery.eq('campana_id', campanaFiltro)
+    if (desde)         leadsQuery = leadsQuery.gte('fecha_consulta', desde)
+    if (hasta)         leadsQuery = leadsQuery.lte('fecha_consulta', hasta)
 
     const [
       { count: totalVentas },
@@ -156,6 +158,8 @@ export default function Dashboard() {
     // --- Filtros para leads ---
     const leadFilters = []
     if (campanaFiltro) leadFilters.push(q => q.eq('campana_id', campanaFiltro))
+    if (desde)         leadFilters.push(q => q.gte('fecha_consulta', desde))
+    if (hasta)         leadFilters.push(q => q.lte('fecha_consulta', hasta))
 
     // --- Filtros para ventas del bloque campañas ---
     const ventaFilters = []
@@ -164,8 +168,8 @@ export default function Dashboard() {
     if (hasta)         ventaFilters.push(q => q.lte('fecha', hasta))
     if (marcaFiltro.length > 0) ventaFilters.push(q => q.in('marca', marcaFiltro))
 
-    // --- Origen de leads ---
-    const origenData = await fetchAll('mkt_leads', 'canal,origen', null, leadFilters)
+    // --- Origen de leads (con filtros de fecha y campaña) ---
+    const origenData = await fetchAll('mkt_leads', 'canal,origen,fecha_consulta', null, leadFilters)
     if (origenData) {
       const map = {}
       origenData.forEach(l => {
