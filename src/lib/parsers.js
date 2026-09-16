@@ -20,20 +20,37 @@ export async function parseFile(file) {
 
 function normalizeDate(val) {
   if (!val) return null
+  // Date object from XLSX cellDates:true
   if (val instanceof Date) {
+    if (isNaN(val.getTime())) return null
     return val.getFullYear() + '-' +
       String(val.getMonth()+1).padStart(2,'0') + '-' +
       String(val.getDate()).padStart(2,'0')
   }
   const s = String(val).trim()
-  if (s.includes('/')) {
-    const parts = s.split('/')
-    if (parts.length === 3) {
-      const [d, m, y] = parts
-      return `${y.padStart(4,'20')}-${m.padStart(2,'0')}-${d.padStart(2,'0')}`
-    }
+  if (!s) return null
+  // ISO or partial ISO: 2026-06-30 or 2026-06-30T...
+  const iso = s.match(/^(\d{4})-(\d{2})-(\d{2})/)
+  if (iso) return `${iso[1]}-${iso[2]}-${iso[3]}`
+  // Garbled XLSX date like "2026 00:00:00-06-30" — extract YYYY and MM-DD
+  const garbled = s.match(/(\d{4}).*?(\d{2})-(\d{2})$/)
+  if (garbled) return `${garbled[1]}-${garbled[2]}-${garbled[3]}`
+  // DD/MM/YYYY
+  const slash = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/)
+  if (slash) {
+    const [, d, m, y] = slash
+    const year = y.length === 2 ? '20'+y : y
+    return `${year}-${m.padStart(2,'0')}-${d.padStart(2,'0')}`
   }
-  if (s.includes('-') && s.length >= 10) return s.slice(0,10)
+  // Try native Date parse as last resort
+  try {
+    const d = new Date(s)
+    if (!isNaN(d.getTime())) {
+      return d.getFullYear() + '-' +
+        String(d.getMonth()+1).padStart(2,'0') + '-' +
+        String(d.getDate()).padStart(2,'0')
+    }
+  } catch(e) {}
   return null
 }
 
