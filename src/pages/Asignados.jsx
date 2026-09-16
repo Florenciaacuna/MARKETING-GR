@@ -43,7 +43,7 @@ export default function Asignados() {
   const [running,        setRunning]        = useState(false)
   const [runLog,         setRunLog]         = useState([])
   const [page,           setPage]           = useState(0)
-  const [filters,        setFilters]        = useState({ search: '', tipo: '', campana_codigo: '', mes: '', origen: '' })
+  const [filters,        setFilters]        = useState({ search: '', tipo: '', campana_codigo: '', campana_id: '', mes: '', origen: '' })
   const [meses,          setMeses]          = useState([])
   const [codigosCampana, setCodigosCampana] = useState([])
   const [campanas,       setCampanas]       = useState([])
@@ -88,8 +88,10 @@ export default function Asignados() {
   const loadFilteredStats = useCallback(async () => {
     if (tab !== 'digital') { setFilteredStats(null); return }
     let leadIdsFiltro = null
-    if (filters.campana_codigo) {
-      const { data: ml } = await supabase.from('mkt_leads').select('id').eq('codigo_campana', filters.campana_codigo)
+    if (filters.campana_id === '__con__') {
+      // Solo preventas con campaña asignada
+    } else if (filters.campana_id) {
+      const { data: ml } = await supabase.from('mkt_leads').select('id').eq('campana_id', filters.campana_id)
       leadIdsFiltro = (ml || []).map(l => l.id)
     }
     const { data: ents } = await supabase.from('mkt_entregas').select('venta_id').not('venta_id','is',null)
@@ -99,6 +101,8 @@ export default function Asignados() {
     if (filters.tipo)   q = q.ilike('tipo', '%' + filters.tipo + '%')
     if (filters.mes)    q = q.gte('fecha', filters.mes + '-01').lte('fecha', filters.mes + '-31')
     if (filters.search) q = q.or('nombre.ilike.%' + filters.search + '%,dni.eq.' + filters.search + ',pv_solicitud.ilike.%' + filters.search + '%')
+    if (filters.campana_id === '__con__') q = q.not('campana_id','is',null)
+    else if (filters.campana_id) q = q.eq('campana_id', filters.campana_id)
     if (leadIdsFiltro) {
       if (leadIdsFiltro.length > 0) q = q.in('lead_id', leadIdsFiltro)
       else { setFilteredStats({ total:0, conEntrega:0, sinEntrega:0 }); return }
@@ -116,8 +120,10 @@ export default function Asignados() {
   const loadData = useCallback(async () => {
     setLoading(true)
     let leadIdsFiltro = null
-    if (filters.campana_codigo) {
-      const { data: ml } = await supabase.from('mkt_leads').select('id').eq('codigo_campana', filters.campana_codigo)
+    if (filters.campana_id === '__con__') {
+      // Solo preventas con campaña asignada
+    } else if (filters.campana_id) {
+      const { data: ml } = await supabase.from('mkt_leads').select('id').eq('campana_id', filters.campana_id)
       leadIdsFiltro = (ml || []).map(l => l.id)
     }
     let q = supabase.from('mkt_ventas')
@@ -290,9 +296,10 @@ export default function Asignados() {
           <input className="input-dark" style={{ width: 200 }} placeholder="Buscar cliente, DNI, PV..."
             value={filters.search} onChange={e => sf('search', e.target.value)} />
           <div className="filter-sep"/>
-          <select className="input-dark" style={{ width: 160 }} value={filters.campana_codigo} onChange={e => sf('campana_codigo', e.target.value)}>
-            <option value="">Campana: todas</option>
-            {codigosCampana.map(c => <option key={c} value={c}>[{c}]</option>)}
+          <select className="input-dark" style={{ width:200 }} value={filters.campana_id||''} onChange={e => sf('campana_id', e.target.value)}>
+            <option value="">Campaña: todas</option>
+            <option value="__con__">— Solo con campaña</option>
+            {campanas.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
           </select>
           <select className="input-dark" style={{ width: 140 }} value={filters.tipo} onChange={e => sf('tipo', e.target.value)}>
             <option value="">Tipo: todos</option>
@@ -305,7 +312,7 @@ export default function Asignados() {
             {origenes.map(o => <option key={o} value={o}>{o}</option>)}
           </select>
           <div className="filter-sep"/>
-          <button onClick={() => { setFilters({ search:'', tipo:'', campana_codigo:'', mes:'', origen:'' }); setPage(0) }}
+          <button onClick={() => { setFilters({ search:'', tipo:'', campana_codigo:'', campana_id:'', mes:'', origen:'' }); setPage(0) }}
             className="btn-ghost text-xs flex-shrink-0">Limpiar</button>
         </div>
 
@@ -406,7 +413,7 @@ export default function Asignados() {
                                   <button onClick={() => setEditing(null)} className="text-gray-600 text-xs">x</button>
                                 </div>
                               ) : (
-                                <span className="text-gray-500 text-xs">{v.mkt_campanas ? v.mkt_campanas.nombre : '- asignar'}</span>
+                                <span className="text-xs" style={{ color: v.mkt_campanas ? '#fff' : '#4b5563' }}>{v.mkt_campanas ? v.mkt_campanas.nombre : '— sin campaña'}</span>
                               )}
                             </div>
                           </div>
