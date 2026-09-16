@@ -46,7 +46,7 @@ export default function Dashboard() {
   const [kpis,         setKpis]         = useState(null)
   const [campanaFiltro, setCampanaFiltro] = useState('')
   const [campanaList,   setCampanaList]   = useState([])
-  const [campDetalle,   setCampDetalle]   = useState(null) // { camp, preventas, gastos }
+  const [campDetalle,   setCampDetalle]   = useState(null) // { camp, preventas, gastos, leadsDigital, leadsEvento }
   const [loadingDet,    setLoadingDet]    = useState(false)
   const [porMarca,     setPorMarca]     = useState([])
   const [historico,    setHistorico]    = useState([])
@@ -97,7 +97,7 @@ export default function Dashboard() {
     ] = await Promise.all([
       applyV(supabase.from('mkt_ventas').select('*',{count:'exact',head:true})),
       applyV(supabase.from('mkt_ventas').select('*',{count:'exact',head:true})).not('lead_id','is',null),
-      supabase.from('mkt_leads').select('*',{count:'exact',head:true}),
+      campanaFiltro ? supabase.from('mkt_leads').select('*',{count:'exact',head:true}).eq('campana_id',campanaFiltro).neq('fuente','manual') : supabase.from('mkt_leads').select('*',{count:'exact',head:true}),
       applyV(supabase.from('mkt_entregas').select('*',{count:'exact',head:true})).not('venta_id','is',null),
     ])
     setKpis({ totalVentas, ventasConLead, totalLeads, totalEntregas })
@@ -215,9 +215,11 @@ export default function Dashboard() {
     Promise.all([
       supabase.from('mkt_campanas').select('id,codigo,nombre,marca,rubro,activo').eq('id', campanaFiltro).single(),
       supabase.from('mkt_ventas').select('id,pv_solicitud,fecha,nombre,dni,vendedor,metodo_match,margen_bruto,bonificacion_terminal,resultado_bruto,gestoria').eq('campana_id', campanaFiltro).order('fecha', { ascending: false }),
-      supabase.from('mkt_gastos').select('id,concepto,monto,fecha,proveedor').eq('campana_id', campanaFiltro).order('fecha', { ascending: false })
-    ]).then(([{ data: camp }, { data: preventas }, { data: gastos }]) => {
-      setCampDetalle({ camp, preventas: preventas||[], gastos: gastos||[] })
+      supabase.from('mkt_gastos').select('id,concepto,monto,fecha,proveedor').eq('campana_id', campanaFiltro).order('fecha', { ascending: false }),
+      supabase.from('mkt_leads').select('*', { count:'exact', head:true }).eq('campana_id', campanaFiltro).neq('fuente','manual'),
+      supabase.from('mkt_leads').select('*', { count:'exact', head:true }).eq('campana_id', campanaFiltro).eq('fuente','manual')
+    ]).then(([{ data: camp }, { data: preventas }, { data: gastos }, { count: leadsDigital }, { count: leadsEvento }]) => {
+      setCampDetalle({ camp, preventas: preventas||[], gastos: gastos||[], leadsDigital: leadsDigital||0, leadsEvento: leadsEvento||0 })
       setLoadingDet(false)
     })
   }, [campanaFiltro])
@@ -337,7 +339,8 @@ export default function Dashboard() {
                     </div>
                     <div className="flex gap-8 flex-wrap">
                       {[
-                        { label:'LEADS',     val: fmt(kpis?.totalLeads||0),  color:'#fff'  },
+                        { label:'LEADS DIGITAL', val: fmt(campDetalle.leadsDigital), color:'#fff' },
+                        { label:'LEADS EVENTO',  val: fmt(campDetalle.leadsEvento),  color:'#6b7280' },
                         { label:'PREVENTAS', val: fmt(pvC),                   color: BRAND  },
                         { label:'INVERSIÓN', val: fmtPesos(inv),              color:'#fff'  },
                         { label:'RESULTADO', val: fmtPesos(res),              color: res>=0?BRAND:'#ef4444' },
