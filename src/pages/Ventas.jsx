@@ -68,34 +68,24 @@ export default function Ventas() {
     try {
       const rows = await parseFile(file)
       const totalFilas = rows.length
-      // Diagnóstico: mostrar columnas detectadas y primeras filas
-      if (rows.length > 0) {
-        const cols = Object.keys(rows[0])
-        const pvVal = rows[0]['PV'] || rows[0]['PV/SOLICITUD'] || rows[0]['PV SOLICITUD'] || '(NO ENCONTRADO)'
-        setUploadMsg(`Columnas detectadas: ${cols.join(', ')} | Primer PV: ${pvVal}`)
-        await new Promise(r => setTimeout(r, 3000))
-      }
-      const rawNorm = rows.map(normalizePVRow).filter(Boolean)
-      const filtradas = totalFilas - rawNorm.length
-      // Deduplicar por pv_solicitud
-      const seen = new Set()
-      const normalized = rawNorm.filter(r => {
-        const key = r.pv_solicitud + '|' + (r.fuente||'')
-        if (seen.has(key)) return false
-        seen.add(key); return true
-      })
-      const duplicadas = rawNorm.length - normalized.length
-      // Insertar en lotes de 500
+      const normalized = rows.map(normalizePVRow).filter(Boolean)
+      const filtradas = totalFilas - normalized.length
+      if (!normalized.length) { setUploadMsg('Sin filas válidas.'); setUploading(false); return }
+
+      // Borrar preventas previas del mismo origen
+      setUploadMsg('Limpiando preventas anteriores...')
+      await supabase.from('mkt_ventas').delete().eq('fuente', 'pv_vinculadas')
+
+      // Insertar todo fresco en lotes — sin upsert para permitir PVs duplicados
       let cargadas = 0
       for (let i = 0; i < normalized.length; i += 500) {
         const batch = normalized.slice(i, i + 500)
-        const { error } = await supabase.from('mkt_ventas')
-          .upsert(batch, { onConflict: 'pv_solicitud,fuente', ignoreDuplicates: false })
+        const { error } = await supabase.from('mkt_ventas').insert(batch)
         if (error) { setUploadMsg(`Error en lote ${i}: ${error.message}`); setUploading(false); return }
         cargadas += batch.length
         setUploadMsg(`Procesando... ${cargadas}/${normalized.length}`)
       }
-      setUploadMsg(`✓ ${cargadas} preventas cargadas · Filtradas: ${filtradas} (/45, NO USAR, vacías) · Duplicadas en archivo: ${duplicadas}`)
+      setUploadMsg(`✓ ${cargadas} preventas cargadas · ${filtradas} ignoradas (NO USAR / vacías)`)
       setFile(null); load()
     } catch(e) {
       setUploadMsg('Error: ' + e.message)
