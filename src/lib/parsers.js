@@ -1,7 +1,6 @@
 import * as XLSX from 'xlsx'
 
-// ── Helpers ──────────────────────────────────────────────────────────────────
-
+// ── parseFile ────────────────────────────────────────────────────────────────
 export async function parseFile(file) {
   return new Promise((res, rej) => {
     const r = new FileReader()
@@ -18,9 +17,9 @@ export async function parseFile(file) {
   })
 }
 
+// ── normalizeDate ─────────────────────────────────────────────────────────────
 function normalizeDate(val) {
   if (!val) return null
-  // Date object from XLSX cellDates:true
   if (val instanceof Date) {
     if (isNaN(val.getTime())) return null
     return val.getFullYear() + '-' +
@@ -29,28 +28,16 @@ function normalizeDate(val) {
   }
   const s = String(val).trim()
   if (!s) return null
-  // ISO or partial ISO: 2026-06-30 or 2026-06-30T...
   const iso = s.match(/^(\d{4})-(\d{2})-(\d{2})/)
   if (iso) return `${iso[1]}-${iso[2]}-${iso[3]}`
-  // Garbled XLSX date like "2026 00:00:00-06-30" — extract YYYY and MM-DD
   const garbled = s.match(/(\d{4}).*?(\d{2})-(\d{2})$/)
   if (garbled) return `${garbled[1]}-${garbled[2]}-${garbled[3]}`
-  // DD/MM/YYYY
   const slash = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/)
   if (slash) {
     const [, d, m, y] = slash
-    const year = y.length === 2 ? '20'+y : y
-    return `${year}-${m.padStart(2,'0')}-${d.padStart(2,'0')}`
+    return `${y.length===2?'20'+y:y}-${m.padStart(2,'0')}-${d.padStart(2,'0')}`
   }
-  // Try native Date parse as last resort
-  try {
-    const d = new Date(s)
-    if (!isNaN(d.getTime())) {
-      return d.getFullYear() + '-' +
-        String(d.getMonth()+1).padStart(2,'0') + '-' +
-        String(d.getDate()).padStart(2,'0')
-    }
-  } catch(e) {}
+  try { const d=new Date(s); if(!isNaN(d.getTime())) return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0') } catch(e){}
   return null
 }
 
@@ -68,157 +55,103 @@ function normalizeDNI(val) {
   return d
 }
 
-// ── Normalizadores ────────────────────────────────────────────────────────────
-
+// ── normalizeFacilitadoresRow ─────────────────────────────────────────────────
 export function normalizeFacilitadoresRow(row) {
   const pv = row['ID'] ? String(row['ID']) : null
   if (!pv) return null
-
-  const telefono = row['TELNUMERO']
-    ? String(row['TELNUMERO'] || '').replace(/\D/g,'') || null
-    : null
-  const codArea  = row['TELCODAREA']
-    ? String(row['TELCODAREA'] || '').replace(/\D/g,'')
-    : ''
-  const telFull  = codArea && telefono ? codArea + telefono : telefono
-
+  const telefono = row['TELNUMERO'] ? String(row['TELNUMERO']||'').replace(/\D/g,'') || null : null
+  const codArea  = row['TELCODAREA'] ? String(row['TELCODAREA']||'').replace(/\D/g,'') : ''
+  const telFull  = codArea && telefono ? codArea+telefono : telefono
   const origen = (() => {
-    const ws = String(row['websiteName'] || '').toLowerCase()
+    const ws = String(row['websiteName']||'').toLowerCase()
     if (ws.includes('mercado')) return 'Mercado Libre'
-    if (ws.includes('whatsapp') || ws.includes('wpp')) return 'WhatsApp'
+    if (ws.includes('whatsapp')||ws.includes('wpp')) return 'WhatsApp'
     return 'Internet'
   })()
-
   return {
     nro_tramite:    pv,
     job_seq:        row['JOB_SEQ'] ? String(row['JOB_SEQ']).trim() : null,
-    fecha_consulta: String(row['Fecha de consulta'] || row['FECHA_CONSULTA'] || '').slice(0,10) || null,
-    apellido:       null,
-    nombre:         row['Nombre'] || row['NOMBRE'] || null,
+    fecha_consulta: String(row['Fecha de consulta']||row['FECHA_CONSULTA']||'').slice(0,10)||null,
+    nombre:         row['Nombre']||row['NOMBRE']||null,
     dni:            normalizeDNI(row['DNI']),
     telefono:       normalizePhone(telFull),
     celular:        normalizePhone(telFull),
-    email:          row['Email'] || row['EMAIL'] || null,
+    email:          row['Email']||row['EMAIL']||null,
     origen,
-    canal:          row['campania'] || row['websiteName'] || null,
-    codigo_campana: (() => {
-      const camp = String(row['campania'] || '')
-      const m = camp.match(/\[([^\]]+)\]/)
-      return m ? m[1].toLowerCase() : null
-    })(),
-    consulta:       row['Consulta'] || row['CONSULTA'] || null,
-    vendedor:       row['USUARIO_DERIVO'] || null,
+    canal:          row['campania']||row['websiteName']||null,
+    codigo_campana: (() => { const m=String(row['campania']||'').match(/\[([^\]]+)\]/); return m?m[1].toLowerCase():null })(),
+    consulta:       row['Consulta']||row['CONSULTA']||null,
+    vendedor:       row['USUARIO_DERIVO']||null,
     fuente:         'celer',
     estado:         'nuevo',
   }
 }
 
+// ── normalizeDerivadoLeadRow ──────────────────────────────────────────────────
 export function normalizeDerivadoLeadRow(row) {
-  const pv = row['Nro Tramite'] || row['NRO TRAMITE'] || row['nro_tramite']
+  const pv = row['Nro Tramite']||row['NRO TRAMITE']||row['nro_tramite']
   if (!pv) return null
-  const nombre = row['Cliente'] || row['CLIENTE'] || row['Nombre'] || ''
+  const nombre = row['Cliente']||row['CLIENTE']||row['Nombre']||''
   if (String(nombre).toUpperCase().includes('NO USAR')) return null
-
   const origen = (() => {
-    const o = String(row['Origen'] || row['origen'] || '').toLowerCase()
+    const o = String(row['Origen']||row['origen']||'').toLowerCase()
     if (o.includes('paso')) return 'De paso'
-    if (o.includes('llamada') || o.includes('entrante')) return 'Llamadas entrantes'
+    if (o.includes('llamada')||o.includes('entrante')) return 'Llamadas entrantes'
     return 'Internet'
   })()
-
   return {
     nro_tramite:    String(pv),
-    fecha_consulta: normalizeDate(row['Fecha de Consulta'] || row['FECHA DE CONSULTA']),
-    nombre:         nombre || null,
-    apellido:       null,
+    fecha_consulta: normalizeDate(row['Fecha de Consulta']||row['FECHA DE CONSULTA']),
+    nombre:         nombre||null,
     dni:            normalizeDNI(row['DNI']),
-    telefono:       normalizePhone(row['Telefono'] || row['TELEFONO']),
-    celular:        normalizePhone(row['Celular'] || row['CELULAR']),
-    email:          row['Email'] || row['EMAIL'] || null,
+    telefono:       normalizePhone(row['Telefono']||row['TELEFONO']),
+    celular:        normalizePhone(row['Celular']||row['CELULAR']),
+    email:          row['Email']||row['EMAIL']||null,
     origen,
-    sub_origen:     row['Sub Origen'] || row['SUB ORIGEN'] || null,
-    canal:          row['Origen'] || row['origen'] || null,
-    codigo_campana: (() => {
-      const camp = String(row['Campaña'] || row['CAMPAÑA'] || row['campana'] || '')
-      const m = camp.match(/\[([^\]]+)\]/)
-      return m ? m[1].toLowerCase() : null
-    })(),
-    vendedor:       row['Vendedor'] || row['VENDEDOR'] || null,
+    sub_origen:     row['Sub Origen']||row['SUB ORIGEN']||null,
+    canal:          row['Origen']||row['origen']||null,
+    codigo_campana: (() => { const m=String(row['Campaña']||row['CAMPAÑA']||row['campana']||'').match(/\[([^\]]+)\]/); return m?m[1].toLowerCase():null })(),
+    vendedor:       row['Vendedor']||row['VENDEDOR']||null,
     fuente:         'derivado',
     estado:         'nuevo',
   }
 }
 
+// ── normalizePVRow ────────────────────────────────────────────────────────────
 export function normalizePVRow(row) {
-  // Soporta AMBOS formatos: viejo (con Proceso) y nuevo (con HISTORIAL, EMPRESA, EMAIL)
-  const pv = String(row['PV/SOLICITUD'] || row['PV SOLICITUD'] || '').trim()
+  const pv = String(row['PV/SOLICITUD']||row['PV SOLICITUD']||'').trim()
   if (!pv) return null
   if (pv.includes('/45')) return null
-  if (pv.includes('NO USAR')) return null
-
-  const nombre = String(row['NOMBRE'] || '').trim()
+  if (pv.toUpperCase().includes('NO USAR')) return null
+  const nombre = String(row['NOMBRE']||'').trim()
   if (nombre.toUpperCase().includes('NO USAR')) return null
-
-  // DNI: intentar primero DNI, luego CUIL CUIT (para empresas)
-  const dniRaw  = row['DNI'] || row['CUIL CUIT'] || ''
-  const dni     = normalizeDNI(dniRaw)
-
-  // Teléfonos
-  const tel  = normalizePhone(row['TELEFONO PERSONAL'] || row['TELEFONO LABORAL'])
-  const cel  = normalizePhone(row['CELULAR PERSONAL']  || row['CELULAR LABORAL'])
-
-  // Email: nuevo formato usa 'EMAIL', viejo usaba 'Mail'
-  const email = row['EMAIL'] || row['Mail'] || row['email'] || null
-
-  // Proceso/JOB_SEQ: columna 'Proceso' en formato viejo
-  const proceso = row['Proceso'] ? String(row['Proceso']).trim() : null
-
-  // Marca desde EMPRESA (ambos formatos)
-  const marca = row['EMPRESA'] || row['Marca'] || row['MARCA'] || null
-
-  // Campos financieros nuevos
-  const precioVenta         = row['PRECIOVENTA']          ? parseFloat(String(row['PRECIOVENTA']).replace(/[.,]/g,'').replace(',','.')) : null
-  const totalPreventa       = row['TOTALPREVENTA']         ? parseFloat(String(row['TOTALPREVENTA']).replace(/[.,]/g,'').replace(',','.')) : null
-  const totalComprob        = row['TOTALCOMPROBANTE_COMPRA'] ? parseFloat(String(row['TOTALCOMPROBANTE_COMPRA']).replace(/[.,]/g,'').replace(',','.')) : null
-
   return {
-    pv_solicitud:              pv,
-    fecha:                     normalizeDate(row['FECHA']),
-    tipo:                      row['TIPO'] || null,
-    nombre:                    nombre || null,
-    dni,
-    telefono_personal:         tel,
-    celular_personal:          cel,
-    vendedor:                  row['VENDEDOR'] || null,
-    marca:                     marca || null,
-    proceso,
-    fuente:                    'pv_vinculadas',
+    pv_solicitud:      pv,
+    fecha:             normalizeDate(row['FECHA']),
+    tipo:              row['TIPO']||null,
+    nombre:            nombre||null,
+    dni:               normalizeDNI(row['DNI']||row['CUIL CUIT']),
+    telefono_personal: normalizePhone(row['TELEFONO PERSONAL']||row['TELEFONO LABORAL']),
+    celular_personal:  normalizePhone(row['CELULAR PERSONAL']||row['CELULAR LABORAL']),
+    vendedor:          row['VENDEDOR']||null,
+    marca:             row['EMPRESA']||row['Marca']||row['MARCA']||null,
+    proceso:           row['Proceso'] ? String(row['Proceso']).trim() : null,
+    fuente:            'pv_vinculadas',
   }
 }
 
+// ── normalizeEntregaRow ───────────────────────────────────────────────────────
 export function normalizeEntregaRow(row) {
-  const preventa = String(row['PV/SOLICITUD'] || row['PREVENTA'] || row['preventa'] || '').trim()
+  const preventa = String(row['PV/SOLICITUD']||row['PREVENTA']||row['preventa']||'').trim()
   if (!preventa) return null
-
-  const rawFecha = row['FECHA'] || row['FECHA ENTREGA'] || row['fecha_entrega'] || ''
-  let fecha = null
-  if (rawFecha instanceof Date) {
-    fecha = rawFecha.getFullYear() + '-' +
-      String(rawFecha.getMonth()+1).padStart(2,'0') + '-' +
-      String(rawFecha.getDate()).padStart(2,'0')
-  } else {
-    fecha = normalizeDate(rawFecha)
-  }
-
-  const tipo = String(row['TIPO'] || row['tipo_preventa'] || '').trim()
+  const tipo = String(row['TIPO']||row['tipo_preventa']||'').trim()
   if (tipo.toUpperCase().includes('VENTA ESPECIAL')) return null
-
   return {
     preventa,
-    fecha_entrega: fecha,
-    sistema:       row['SISTEMA'] || row['sistema'] || null,
-    tipo_preventa: tipo || null,
-    vendedor:      row['VENDEDOR'] || row['vendedor'] || null,
-    salon:         row['SALON'] || row['salon'] || row['EMPRESA'] || null,
+    fecha_entrega: normalizeDate(row['FECHA']||row['FECHA ENTREGA']||row['fecha_entrega']),
+    sistema:       row['SISTEMA']||row['sistema']||null,
+    tipo_preventa: tipo||null,
+    vendedor:      row['VENDEDOR']||row['vendedor']||null,
+    salon:         row['SALON']||row['salon']||row['EMPRESA']||null,
   }
 }
