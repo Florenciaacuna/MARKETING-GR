@@ -406,12 +406,7 @@ export default function Asignados() {
 
                         <td>
                           <div className="flex flex-col gap-0.5">
-                            {lead && lead.codigo_campana && (
-                              (() => {
-                                const camp = campanas.find(c => c.codigo && c.codigo.toLowerCase() === lead.codigo_campana.toLowerCase())
-                                return <span className="text-xs" style={{ color:'#B5E000' }}>{camp ? camp.nombre : `[${lead.codigo_campana}]`}</span>
-                              })()
-                            )}
+
                             <div className="cursor-pointer" onClick={() => !editing && setEditing({ id: v.id, field: 'campana_id', value: v.campana_id || '', leadId: null })}>
                               {editing && editing.id === v.id && editing.field === 'campana_id' ? (
                                 <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
@@ -424,7 +419,18 @@ export default function Asignados() {
                                   <button onClick={() => setEditing(null)} className="text-gray-600 text-xs">x</button>
                                 </div>
                               ) : (
-                                <span className="text-xs" style={{ color: v.mkt_campanas ? '#fff' : '#4b5563' }}>{v.mkt_campanas ? v.mkt_campanas.nombre : '— sin campaña'}</span>
+                                {(() => {
+                                  // Prioridad: campaña de la venta → campaña del lead → nada
+                                  if (v.mkt_campanas) {
+                                    return <span className="text-xs font-medium text-white">{v.mkt_campanas.nombre}</span>
+                                  }
+                                  const lead = v.mkt_leads
+                                  if (lead && lead.codigo_campana) {
+                                    const c = campanas.find(x => x.codigo && x.codigo.toLowerCase() === lead.codigo_campana.toLowerCase())
+                                    return <span className="text-xs" style={{ color:'#9ca3af' }}>{c ? c.nombre : `[${lead.codigo_campana}]`}</span>
+                                  }
+                                  return <span className="text-xs" style={{ color:'#374151' }}>—</span>
+                                })()}
                               )}
                             </div>
                           </div>
