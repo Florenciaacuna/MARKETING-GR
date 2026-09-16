@@ -172,7 +172,6 @@ export function normalizePVRow(row) {
     dni,
     telefono_personal:         tel,
     celular_personal:          cel,
-    email:                     email || null,
     vendedor:                  row['VENDEDOR'] || null,
     marca:                     marca || null,
     proceso,
