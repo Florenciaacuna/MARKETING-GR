@@ -67,19 +67,28 @@ export default function Ventas() {
     setUploading(true); setUploadMsg('Procesando...')
     try {
       const rows = await parseFile(file)
+      const totalFilas = rows.length
       const rawNorm = rows.map(normalizePVRow).filter(Boolean)
-      if (!rawNorm.length) { setUploadMsg('Sin filas válidas.'); setUploading(false); return }
-      // Deduplicar por pv_solicitud — el reporte puede traer la misma PV dos veces
+      const filtradas = totalFilas - rawNorm.length
+      // Deduplicar por pv_solicitud
       const seen = new Set()
       const normalized = rawNorm.filter(r => {
         const key = r.pv_solicitud + '|' + (r.fuente||'')
         if (seen.has(key)) return false
         seen.add(key); return true
       })
-      const { error } = await supabase.from('mkt_ventas')
-        .upsert(normalized, { onConflict: 'pv_solicitud,fuente', ignoreDuplicates: false })
-      if (error) { setUploadMsg('Error: ' + error.message); setUploading(false); return }
-      setUploadMsg(`✓ ${normalized.length} preventas cargadas`)
+      const duplicadas = rawNorm.length - normalized.length
+      // Insertar en lotes de 500
+      let cargadas = 0
+      for (let i = 0; i < normalized.length; i += 500) {
+        const batch = normalized.slice(i, i + 500)
+        const { error } = await supabase.from('mkt_ventas')
+          .upsert(batch, { onConflict: 'pv_solicitud,fuente', ignoreDuplicates: false })
+        if (error) { setUploadMsg(`Error en lote ${i}: ${error.message}`); setUploading(false); return }
+        cargadas += batch.length
+        setUploadMsg(`Procesando... ${cargadas}/${normalized.length}`)
+      }
+      setUploadMsg(`✓ ${cargadas} preventas cargadas · Filtradas: ${filtradas} (/45, NO USAR, vacías) · Duplicadas en archivo: ${duplicadas}`)
       setFile(null); load()
     } catch(e) {
       setUploadMsg('Error: ' + e.message)
