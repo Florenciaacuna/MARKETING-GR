@@ -89,6 +89,9 @@ export default function Dashboard() {
     }
 
     // --- KPIs globales ---
+    let leadsQuery = supabase.from('mkt_leads').select('*',{count:'exact',head:true})
+    if (campanaFiltro) leadsQuery = leadsQuery.eq('campana_id', campanaFiltro).neq('fuente','manual')
+
     const [
       { count: totalVentas },
       { count: ventasConLead },
@@ -97,7 +100,7 @@ export default function Dashboard() {
     ] = await Promise.all([
       applyV(supabase.from('mkt_ventas').select('*',{count:'exact',head:true})),
       applyV(supabase.from('mkt_ventas').select('*',{count:'exact',head:true})).not('lead_id','is',null),
-      campanaFiltro ? supabase.from('mkt_leads').select('*',{count:'exact',head:true}).eq('campana_id',campanaFiltro).neq('fuente','manual') : supabase.from('mkt_leads').select('*',{count:'exact',head:true}),
+      leadsQuery,
       applyV(supabase.from('mkt_entregas').select('*',{count:'exact',head:true})).not('venta_id','is',null),
     ])
     setKpis({ totalVentas, ventasConLead, totalLeads, totalEntregas })
