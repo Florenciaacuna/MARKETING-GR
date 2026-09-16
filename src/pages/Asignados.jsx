@@ -418,8 +418,7 @@ export default function Asignados() {
                                   <button onClick={saveEdit} disabled={saving} style={{ color: BRAND, fontSize: 10 }}>{saving ? '...' : 'ok'}</button>
                                   <button onClick={() => setEditing(null)} className="text-gray-600 text-xs">x</button>
                                 </div>
-                              ) : (
-                                {(() => {
+                              ) : (() => {
                                   // Prioridad: campaña de la venta → campaña del lead → nada
                                   if (v.mkt_campanas) {
                                     return <span className="text-xs font-medium text-white">{v.mkt_campanas.nombre}</span>
@@ -431,7 +430,6 @@ export default function Asignados() {
                                   }
                                   return <span className="text-xs" style={{ color:'#374151' }}>—</span>
                                 })()}
-                              )}
                             </div>
                           </div>
                         </td>
