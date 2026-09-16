@@ -118,23 +118,47 @@ export function normalizeDerivadoLeadRow(row) {
 }
 
 // ── normalizePVRow ────────────────────────────────────────────────────────────
+// Soporta múltiples formatos del reporte Celer
 export function normalizePVRow(row) {
-  const pv = String(row['PV/SOLICITUD']||row['PV SOLICITUD']||'').trim()
+  // PV: puede llamarse PV, PV/SOLICITUD, PV SOLICITUD o PV/SOL
+  const pv = String(
+    row['PV'] || row['PV/SOLICITUD'] || row['PV SOLICITUD'] ||
+    row['PV/SOL'] || row['SOLICITUD'] || ''
+  ).trim()
   if (!pv) return null
   if (pv.includes('/45')) return null
   if (pv.toUpperCase().includes('NO USAR')) return null
-  const nombre = String(row['NOMBRE']||'').trim()
+
+  // CLIENTE puede llamarse CLIENTE, NOMBRE o RAZON SOCIAL
+  const nombre = String(
+    row['CLIENTE'] || row['NOMBRE'] || row['RAZON SOCIAL'] || ''
+  ).trim()
   if (nombre.toUpperCase().includes('NO USAR')) return null
+
+  // ASESOR puede llamarse ASESOR o VENDEDOR
+  const vendedor = row['ASESOR'] || row['VENDEDOR'] || null
+
+  // MARCA puede venir de EMPRESA, SISTEMA o MARCA
+  const marca = row['EMPRESA'] || row['SISTEMA'] || row['Marca'] || row['MARCA'] || null
+
+  // Teléfonos: múltiples columnas posibles
+  const tel = normalizePhone(
+    row['TEL'] || row['TELEFONO PERSONAL'] || row['TELEFONO LABORAL'] || row['TEL 1'] || ''
+  )
+  const cel = normalizePhone(
+    row['CELULAR'] || row['CELULAR PERSONAL'] || row['CELULAR LABORAL'] || row['TEL 2'] || ''
+  )
+
   return {
     pv_solicitud:      pv,
     fecha:             normalizeDate(row['FECHA']),
-    tipo:              row['TIPO']||null,
-    nombre:            nombre||null,
-    dni:               normalizeDNI(row['DNI']||row['CUIL CUIT']),
-    telefono_personal: normalizePhone(row['TELEFONO PERSONAL']||row['TELEFONO LABORAL']),
-    celular_personal:  normalizePhone(row['CELULAR PERSONAL']||row['CELULAR LABORAL']),
-    vendedor:          row['VENDEDOR']||null,
-    marca:             row['EMPRESA']||row['Marca']||row['MARCA']||null,
+    tipo:              row['TIPO'] || null,
+    nombre:            nombre || null,
+    dni:               normalizeDNI(row['DNI'] || row['CUIL'] || row['CUIL CUIT'] || ''),
+    telefono_personal: tel,
+    celular_personal:  cel,
+    vendedor:          vendedor || null,
+    marca:             marca || null,
     proceso:           row['Proceso'] ? String(row['Proceso']).trim() : null,
     fuente:            'pv_vinculadas',
   }
