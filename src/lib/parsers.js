@@ -126,7 +126,6 @@ export function normalizePVRow(row) {
     row['PV/SOL'] || row['SOLICITUD'] || ''
   ).trim()
   if (!pv) return null
-  if (pv.includes('/45')) return null
   if (pv.toUpperCase().includes('NO USAR')) return null
 
   // CLIENTE puede llamarse CLIENTE, NOMBRE o RAZON SOCIAL
