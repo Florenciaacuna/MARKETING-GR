@@ -67,8 +67,15 @@ export default function Ventas() {
     setUploading(true); setUploadMsg('Procesando...')
     try {
       const rows = await parseFile(file)
-      const normalized = rows.map(normalizePVRow).filter(Boolean)
-      if (!normalized.length) { setUploadMsg('Sin filas válidas.'); setUploading(false); return }
+      const rawNorm = rows.map(normalizePVRow).filter(Boolean)
+      if (!rawNorm.length) { setUploadMsg('Sin filas válidas.'); setUploading(false); return }
+      // Deduplicar por pv_solicitud — el reporte puede traer la misma PV dos veces
+      const seen = new Set()
+      const normalized = rawNorm.filter(r => {
+        const key = r.pv_solicitud + '|' + (r.fuente||'')
+        if (seen.has(key)) return false
+        seen.add(key); return true
+      })
       const { error } = await supabase.from('mkt_ventas')
         .upsert(normalized, { onConflict: 'pv_solicitud,fuente', ignoreDuplicates: false })
       if (error) { setUploadMsg('Error: ' + error.message); setUploading(false); return }
