@@ -120,9 +120,7 @@ export default function Asignados() {
   const loadData = useCallback(async () => {
     setLoading(true)
     let leadIdsFiltro = null
-    if (filters.campana_id === '__con__') {
-      // Solo preventas con campaña asignada
-    } else if (filters.campana_id) {
+    if (filters.campana_id && filters.campana_id !== '__con__') {
       const { data: ml } = await supabase.from('mkt_leads').select('id').eq('campana_id', filters.campana_id)
       leadIdsFiltro = (ml || []).map(l => l.id)
     }
@@ -135,6 +133,7 @@ export default function Asignados() {
     if (filters.tipo)   q = q.ilike('tipo','%' + filters.tipo + '%')
     if (filters.mes)    q = q.gte('fecha', filters.mes + '-01').lte('fecha', filters.mes + '-31')
     if (filters.search) q = q.or('nombre.ilike.%' + filters.search + '%,dni.eq.' + filters.search + ',pv_solicitud.ilike.%' + filters.search + '%')
+    if (filters.campana_id === '__con__') q = q.not('campana_id','is',null)
     if (leadIdsFiltro !== null) {
       if (leadIdsFiltro.length > 0) q = q.in('lead_id', leadIdsFiltro)
       else q = q.eq('id','00000000-0000-0000-0000-000000000000')
