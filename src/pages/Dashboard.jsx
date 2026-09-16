@@ -90,7 +90,7 @@ export default function Dashboard() {
 
     // --- KPIs globales ---
     let leadsQuery = supabase.from('mkt_leads').select('*',{count:'exact',head:true})
-    if (campanaFiltro) leadsQuery = leadsQuery.eq('campana_id', campanaFiltro).neq('fuente','manual')
+    if (campanaFiltro) leadsQuery = leadsQuery.eq('campana_id', campanaFiltro)
 
     const [
       { count: totalVentas },
@@ -219,7 +219,7 @@ export default function Dashboard() {
       supabase.from('mkt_campanas').select('id,codigo,nombre,marca,rubro,activo').eq('id', campanaFiltro).single(),
       supabase.from('mkt_ventas').select('id,pv_solicitud,fecha,nombre,dni,vendedor,metodo_match,margen_bruto,bonificacion_terminal,resultado_bruto,gestoria').eq('campana_id', campanaFiltro).order('fecha', { ascending: false }),
       supabase.from('mkt_gastos').select('id,concepto,monto,fecha,proveedor').eq('campana_id', campanaFiltro).order('fecha', { ascending: false }),
-      supabase.from('mkt_leads').select('*', { count:'exact', head:true }).eq('campana_id', campanaFiltro).neq('fuente','manual'),
+      supabase.from('mkt_leads').select('*', { count:'exact', head:true }).eq('campana_id', campanaFiltro),
       supabase.from('mkt_leads').select('*', { count:'exact', head:true }).eq('campana_id', campanaFiltro).eq('fuente','manual')
     ]).then(([{ data: camp }, { data: preventas }, { data: gastos }, { count: leadsDigital }, { count: leadsEvento }]) => {
       setCampDetalle({ camp, preventas: preventas||[], gastos: gastos||[], leadsDigital: leadsDigital||0, leadsEvento: leadsEvento||0 })
@@ -301,7 +301,7 @@ export default function Dashboard() {
       {/* KPIs */}
       <div className="grid grid-cols-4 gap-3">
         {[
-          { label:'LEADS',          value: fmt(kpis ? kpis.totalLeads    : 0), sub:'consultas digitales' },
+          { label:'LEADS',          value: fmt(campDetalle ? (campDetalle.leadsDigital||0)+(campDetalle.leadsEvento||0) : (kpis ? kpis.totalLeads : 0)), sub: campDetalle ? 'digital + evento' : 'consultas digitales' },
           { label:'PREVENTAS',         value: fmt(kpis ? kpis.totalVentas   : 0), sub:'prepreventas cargadas', accent:true },
           { label:'CON LEAD',       value: fmt(kpis ? kpis.ventasConLead : 0), sub:'origen identificado', accent:true },
           { label:'CONVERSIÓN',     value: pctConversion,                       sub:'preventas / total preventas' },
@@ -342,8 +342,9 @@ export default function Dashboard() {
                     </div>
                     <div className="flex gap-8 flex-wrap">
                       {[
-                        { label:'LEADS DIGITAL', val: fmt(campDetalle.leadsDigital), color:'#fff' },
-                        { label:'LEADS EVENTO',  val: fmt(campDetalle.leadsEvento),  color:'#6b7280' },
+                        { label:'LEADS',          val: fmt((campDetalle.leadsDigital||0)+(campDetalle.leadsEvento||0)), color:'#fff' },
+                        { label:'LEADS DIGITAL', val: fmt(campDetalle.leadsDigital), color:'#9ca3af', big:false },
+                        { label:'LEADS EVENTO',  val: fmt(campDetalle.leadsEvento),  color:'#6b7280', big:false },
                         { label:'PREVENTAS', val: fmt(pvC),                   color: BRAND  },
                         { label:'INVERSIÓN', val: fmtPesos(inv),              color:'#fff'  },
                         { label:'RESULTADO', val: fmtPesos(res),              color: res>=0?BRAND:'#ef4444' },
