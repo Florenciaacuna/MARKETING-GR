@@ -301,7 +301,7 @@ export default function Dashboard() {
       {/* KPIs */}
       <div className="grid grid-cols-4 gap-3">
         {[
-          { label:'LEADS',          value: fmt(campDetalle ? (campDetalle.leadsDigital||0)+(campDetalle.leadsEvento||0) : (kpis ? kpis.totalLeads : 0)), sub: campDetalle ? 'digital + evento' : 'consultas digitales' },
+          { label:'LEADS',          value: fmt(campanaFiltro && campLeads.length ? campLeads[0]?.leads || 0 : (kpis ? kpis.totalLeads : 0)), sub: campanaFiltro ? 'leads de la campaña' : 'consultas digitales' },
           { label:'PREVENTAS',         value: fmt(kpis ? kpis.totalVentas   : 0), sub:'prepreventas cargadas', accent:true },
           { label:'CON LEAD',       value: fmt(kpis ? kpis.ventasConLead : 0), sub:'origen identificado', accent:true },
           { label:'CONVERSIÓN',     value: pctConversion,                       sub:'preventas / total preventas' },
