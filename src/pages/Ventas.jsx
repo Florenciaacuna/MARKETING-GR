@@ -68,6 +68,13 @@ export default function Ventas() {
     try {
       const rows = await parseFile(file)
       const totalFilas = rows.length
+      // Diagnóstico: mostrar columnas detectadas y primeras filas
+      if (rows.length > 0) {
+        const cols = Object.keys(rows[0])
+        const pvVal = rows[0]['PV'] || rows[0]['PV/SOLICITUD'] || rows[0]['PV SOLICITUD'] || '(NO ENCONTRADO)'
+        setUploadMsg(`Columnas detectadas: ${cols.join(', ')} | Primer PV: ${pvVal}`)
+        await new Promise(r => setTimeout(r, 3000))
+      }
       const rawNorm = rows.map(normalizePVRow).filter(Boolean)
       const filtradas = totalFilas - rawNorm.length
       // Deduplicar por pv_solicitud
