@@ -140,7 +140,7 @@ body {
 }
 
 .sidebar-user {
-  display: flex; align-items: center; gap-8px;
+  display: flex; align-items: center; gap: 8px;
   font-size: 12px; color: var(--text-secondary);
 }
 
