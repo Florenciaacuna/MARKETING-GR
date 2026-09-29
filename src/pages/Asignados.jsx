@@ -330,6 +330,20 @@ export default function Asignados() {
 
 
 
+        {tab === 'otros' && (
+          <div className="rounded-xl p-4 mb-3 flex items-start gap-3"
+            style={{ background:'#1a1500', border:'1px solid #3a2d00' }}>
+            <span style={{ fontSize:20 }}>💡</span>
+            <div>
+              <div className="text-sm font-bold text-white mb-1">¿Cómo vincular estas preventas?</div>
+              <div className="text-xs" style={{ color:'#9ca3af' }}>
+                Estas preventas no tienen lead asociado. Para vincularlas andá a la hoja de{' '}
+                <strong style={{ color:'#B5E000' }}>Preventas</strong>, buscá la preventa y hacé clic en el lápiz ✏ 
+                de la columna <strong style={{ color:'#B5E000' }}>Lead vinculado</strong> para asignar el lead correspondiente.
+              </div>
+            </div>
+          </div>
+        )}
         <div className="overflow-x-auto rounded-lg border" style={{ borderColor:'#2a2a2a' }}>
           <table className="dark-table">
             <thead>
