@@ -43,11 +43,12 @@ export default function Asignados() {
   const [running,        setRunning]        = useState(false)
   const [runLog,         setRunLog]         = useState([])
   const [page,           setPage]           = useState(0)
-  const [filters,        setFilters]        = useState({ search: '', tipo: '', campana_codigo: '', campana_id: '', mes: '', origen: '' })
+  const [filters,        setFilters]        = useState({ search: '', tipo: '', campana_codigo: '', campana_id: '', mes: '', origen: '', canales: [] })
   const [meses,          setMeses]          = useState([])
   const [codigosCampana, setCodigosCampana] = useState([])
   const [campanas,       setCampanas]       = useState([])
   const [origenes,       setOrigenes]       = useState([])
+  const [canalesList,    setCanalesList]    = useState([])
   const [editing,        setEditing]        = useState(null)
   const [saving,         setSaving]         = useState(false)
 
@@ -65,10 +66,11 @@ export default function Asignados() {
       })
     supabase.from('mkt_campanas').select('id,codigo,nombre').order('nombre')
       .then(({ data: d }) => setCampanas(d || []))
-    supabase.from('mkt_leads').select('origen').not('origen','is',null)
+    supabase.from('mkt_leads').select('origen,canal').not('origen','is',null)
       .then(({ data: d }) => {
         if (!d) return
         setOrigenes([...new Set(d.map(r => r.origen).filter(Boolean))].sort())
+        setCanalesList([...new Set(d.map(r => r.canal).filter(Boolean))].sort())
       })
   }, [])
 
@@ -121,7 +123,12 @@ export default function Asignados() {
     setLoading(true)
     let leadIdsFiltro = null
     if (filters.campana_id && filters.campana_id !== '__con__') {
-      const { data: ml } = await supabase.from('mkt_leads').select('id').eq('campana_id', filters.campana_id)
+      let lq = supabase.from('mkt_leads').select('id').eq('campana_id', filters.campana_id)
+      if (filters.canales?.length > 0) lq = lq.in('canal', filters.canales)
+      const { data: ml } = await lq
+      leadIdsFiltro = (ml || []).map(l => l.id)
+    } else if (filters.canales?.length > 0) {
+      const { data: ml } = await supabase.from('mkt_leads').select('id').in('canal', filters.canales)
       leadIdsFiltro = (ml || []).map(l => l.id)
     }
     let q = supabase.from('mkt_ventas')
@@ -134,6 +141,9 @@ export default function Asignados() {
     if (filters.mes)    q = q.gte('fecha', filters.mes + '-01').lte('fecha', filters.mes + '-31')
     if (filters.search) q = q.or('nombre.ilike.%' + filters.search + '%,dni.eq.' + filters.search + ',pv_solicitud.ilike.%' + filters.search + '%')
     if (filters.campana_id === '__con__') q = q.not('campana_id','is',null)
+    if (filters.canales?.length > 0) {
+      // Filter through leads with matching canal
+    }
     if (leadIdsFiltro !== null) {
       if (leadIdsFiltro.length > 0) q = q.in('lead_id', leadIdsFiltro)
       else q = q.eq('id','00000000-0000-0000-0000-000000000000')
@@ -325,7 +335,22 @@ export default function Asignados() {
             ))}
           </select>
           <div className="filter-sep"/>
-          <button onClick={() => { setFilters({ search:'', tipo:'', campana_codigo:'', campana_id:'', mes:'', origen:'' }); setPage(0) }}
+          {/* Canal - multi-select */}
+          <div className="relative flex-shrink-0">
+            <select className="input-dark" style={{ width:170 }}
+              onChange={e => { const v=e.target.value; if(v && !(filters.canales||[]).includes(v)) sf('canales',[...(filters.canales||[]),v]) }}>
+              <option value="">Canal...</option>
+              {canalesList.filter(c => !(filters.canales||[]).includes(c)).map(c => <option key={c} value={c}>{c}</option>)}
+            </select>
+          </div>
+          {(filters.canales||[]).map(c => (
+            <span key={c} className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-lg flex-shrink-0"
+              style={{ background:'#1a2e00', color:'#B5E000', border:'1px solid rgba(181,224,0,0.2)' }}>
+              {c} <button onClick={() => sf('canales',(filters.canales||[]).filter(x=>x!==c))} style={{ color:'#6b7280' }}>✕</button>
+            </span>
+          ))}
+          <div className="filter-sep"/>
+          <button onClick={() => { setFilters({ search:'', tipo:'', campana_codigo:'', campana_id:'', mes:'', origen:'', canales:[] }); setPage(0) }}
             className="btn-ghost text-xs flex-shrink-0">Limpiar</button>
         </div>
 
