@@ -66,11 +66,18 @@ export default function Asignados() {
       })
     supabase.from('mkt_campanas').select('id,codigo,nombre').order('nombre')
       .then(({ data: d }) => setCampanas(d || []))
-    supabase.from('mkt_leads').select('origen,canal').not('origen','is',null)
+    // Origenes de leads
+    supabase.from('mkt_leads').select('origen').not('origen','is',null).limit(1000)
       .then(({ data: d }) => {
         if (!d) return
         setOrigenes([...new Set(d.map(r => r.origen).filter(Boolean))].sort())
-        setCanalesList([...new Set(d.map(r => r.canal).filter(Boolean))].sort())
+      })
+    // Canales: solo de leads vinculados a preventas (valores limpios como Internet, Cita Vendedor)
+    supabase.from('mkt_ventas').select('mkt_leads!mkt_ventas_lead_id_fkey(canal)')
+      .not('lead_id','is',null).limit(5000)
+      .then(({ data: d }) => {
+        const vals = (d||[]).map(v => v.mkt_leads?.canal).filter(Boolean)
+        setCanalesList([...new Set(vals)].sort())
       })
   }, [])
 
