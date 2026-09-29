@@ -1,5 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
-import { supabase } from '../lib/supabase'
+import { useDashboard } from '../hooks/useDashboard'
 import DatePicker from '../components/DatePicker'
 import {
   PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer,
@@ -8,9 +7,8 @@ import {
 
 const BRAND   = '#B5E000'
 const PALETTE = ['#B5E000','#8ca800','#5f7200','#d4f000','#a3c200','#3d5200','#6b8a00','#e8ff4d']
-const GRAY3   = '#2a2a2a'
 
-const fmt    = n  => (n || 0).toLocaleString('es-AR')
+const fmt      = n  => (n || 0).toLocaleString('es-AR')
 const fmtPct   = (a,b) => b > 0 ? (a * 100 / b).toFixed(1) + '%' : '0%'
 const fmtPesos = n => (n||0).toLocaleString('es-AR', { style:'currency', currency:'ARS', maximumFractionDigits:0 })
 
@@ -18,16 +16,16 @@ const MARCAS = ['KIARA','CIARA','PEARA','MOVILIS','SALRA','HUERTAS','LAFABRICAUS
 const RUBROS = ['0KM','PDA','USADOS','V.E','COMPRA','POSTVENTA']
 
 const TipCustom = ({ active, payload, label }) => {
-  if (!active || !payload || !payload.length) return null
+  if (!active || !payload?.length) return null
   return (
     <div style={{ background:'#1a1a1a', border:'1px solid #2a2a2a', borderRadius:8, padding:'8px 12px', fontSize:11 }}>
       <div style={{ color:'#fff', fontWeight:700, marginBottom:4 }}>{label}</div>
-      {payload.map((p,i) => <div key={i} style={{ color: p.color || BRAND }}>{p.name}: {fmt(p.value)}</div>)}
+      {payload.map((p,i) => <div key={i} style={{ color:p.color||BRAND }}>{p.name}: {fmt(p.value)}</div>)}
     </div>
   )
 }
 
-const PieLegendCustom = ({ payload }) => (
+const PieLegend = ({ payload }) => (
   <div style={{ display:'flex', flexWrap:'wrap', gap:6, justifyContent:'center', marginTop:8 }}>
     {(payload||[]).map((p,i) => (
       <div key={i} style={{ display:'flex', alignItems:'center', gap:4, fontSize:10 }}>
@@ -39,202 +37,17 @@ const PieLegendCustom = ({ payload }) => (
 )
 
 export default function Dashboard() {
-  const [desde,        setDesde]        = useState('')
-  const [hasta,        setHasta]        = useState('')
-  const [marcaFiltro,  setMarcaFiltro]  = useState([])
-  const [rubroFiltro,  setRubroFiltro]  = useState([])
-  const [kpis,         setKpis]         = useState(null)
-  const [campanaFiltro, setCampanaFiltro] = useState('')
-  const [campanaList,   setCampanaList]   = useState([])
-  const [campDetalle,   setCampDetalle]   = useState(null) // { camp, preventas, gastos, leadsDigital, leadsEvento }
-  const [loadingDet,    setLoadingDet]    = useState(false)
-  const [porMarca,     setPorMarca]     = useState([])
-  const [historico,    setHistorico]    = useState([])
-  const [campLeads,    setCampLeads]    = useState([])
-  const [origenLeads,  setOrigenLeads]  = useState([])
-  const [loading,      setLoading]      = useState(true)
+  const {
+    desde, setDesde, hasta, setHasta,
+    marcaFiltro, setMarcaFiltro, toggleMarca,
+    rubroFiltro, setRubroFiltro, toggleRubro,
+    campanaFiltro, setCampanaFiltro, campanaList,
+    limpiarFiltros, loading, loadingDet,
+    kpis, porMarca, historico, campLeads, origenLeads,
+    campDetalle, campFiltered,
+  } = useDashboard()
 
-  function toggleMarca(m) {
-    setMarcaFiltro(prev => prev.includes(m) ? prev.filter(x => x !== m) : [...prev, m])
-  }
-  function toggleRubro(r) {
-    setRubroFiltro(prev => prev.includes(r) ? prev.filter(x => x !== r) : [...prev, r])
-  }
-
-  async function fetchAll(table, selectStr, notNullCol = null, filters = []) {
-    const PAGE = 1000; let all = [], from = 0
-    while (true) {
-      let q = supabase.from(table).select(selectStr).range(from, from + PAGE - 1)
-      if (notNullCol) q = q.not(notNullCol, 'is', null)
-      filters.forEach(f => { q = f(q) })
-      const { data } = await q
-      if (!data?.length) break
-      all = all.concat(data)
-      if (data.length < PAGE) break
-      from += PAGE
-    }
-    return all
-  }
-
-  const load = useCallback(async () => {
-    setLoading(true)
-
-    // Build venta filters
-    const applyV = q => {
-      if (desde) q = q.gte('fecha', desde)
-      if (hasta) q = q.lte('fecha', hasta)
-      if (marcaFiltro.length > 0) q = q.in('marca', marcaFiltro)
-      if (campanaFiltro) q = q.eq('campana_id', campanaFiltro)
-      return q
-    }
-
-    // --- KPIs globales ---
-    let leadsQuery = supabase.from('mkt_leads').select('*',{count:'exact',head:true})
-    if (campanaFiltro) leadsQuery = leadsQuery.eq('campana_id', campanaFiltro)
-    if (desde)         leadsQuery = leadsQuery.gte('fecha_consulta', desde)
-    if (hasta)         leadsQuery = leadsQuery.lte('fecha_consulta', hasta)
-
-    const [
-      { count: totalVentas },
-      { count: ventasConLead },
-      { count: totalLeads },
-      { count: totalEntregas },
-    ] = await Promise.all([
-      applyV(supabase.from('mkt_ventas').select('*',{count:'exact',head:true})),
-      applyV(supabase.from('mkt_ventas').select('*',{count:'exact',head:true})).not('lead_id','is',null),
-      leadsQuery,
-      applyV(supabase.from('mkt_entregas').select('*',{count:'exact',head:true})).not('venta_id','is',null),
-    ])
-    setKpis({ totalVentas, ventasConLead, totalLeads, totalEntregas })
-
-    // --- Por marca: ventas totales + con lead ---
-    const { data: vMarca } = await applyV(
-      supabase.from('mkt_ventas').select('marca,lead_id')
-    ).limit(20000)
-
-    if (vMarca) {
-      const map = {}
-      vMarca.forEach(v => {
-        const m = v.marca || 'Sin marca'
-        if (!map[m]) map[m] = { marca: m, ventas: 0, conLead: 0 }
-        map[m].ventas++
-        if (v.lead_id) map[m].conLead++
-      })
-      // Leads por marca (via campana)
-      const { data: lMarca } = await supabase.from('mkt_leads')
-        .select('codigo_campana, mkt_campanas!mkt_leads_campana_id_fkey(marca)')
-        .not('codigo_campana','is',null).limit(50000)
-      const leadsMap = {}
-      if (lMarca) {
-        lMarca.forEach(l => {
-          const m = (l.mkt_campanas && l.mkt_campanas.marca) ? l.mkt_campanas.marca : null
-          if (m) leadsMap[m] = (leadsMap[m] || 0) + 1
-        })
-      }
-      const arr = Object.values(map)
-        .map(r => ({ ...r, leads: leadsMap[r.marca] || 0 }))
-        .sort((a,b) => b.ventas - a.ventas)
-      setPorMarca(arr)
-    }
-
-    // --- Histórico mensual ---
-    const { data: vHist } = await supabase.from('mkt_ventas')
-      .select('fecha,lead_id').not('fecha','is',null).limit(20000)
-    if (vHist) {
-      const map = {}
-      vHist.forEach(v => {
-        const mes = v.fecha.slice(0,7)
-        if (!map[mes]) map[mes] = { mes, ventas:0, conLead:0 }
-        map[mes].ventas++
-        if (v.lead_id) map[mes].conLead++
-      })
-      const sorted = Object.values(map).sort((a,b) => a.mes.localeCompare(b.mes))
-      setHistorico(sorted.map(m => ({
-        ...m,
-        label: new Date(m.mes+'-15').toLocaleString('es-AR',{month:'short',year:'2-digit'})
-      })))
-    }
-
-    // --- Filtros para leads ---
-    const leadFilters = []
-    if (campanaFiltro) leadFilters.push(q => q.eq('campana_id', campanaFiltro))
-    if (desde)         leadFilters.push(q => q.gte('fecha_consulta', desde))
-    if (hasta)         leadFilters.push(q => q.lte('fecha_consulta', hasta))
-
-    // --- Filtros para ventas del bloque campañas ---
-    const ventaFilters = []
-    if (campanaFiltro) ventaFilters.push(q => q.eq('campana_id', campanaFiltro))
-    if (desde)         ventaFilters.push(q => q.gte('fecha', desde))
-    if (hasta)         ventaFilters.push(q => q.lte('fecha', hasta))
-    if (marcaFiltro.length > 0) ventaFilters.push(q => q.in('marca', marcaFiltro))
-
-    // --- Origen de leads (con filtros de fecha y campaña) ---
-    const origenData = await fetchAll('mkt_leads', 'canal,origen,fecha_consulta', null, leadFilters)
-    if (origenData) {
-      const map = {}
-      origenData.forEach(l => {
-        const key = l.canal || l.origen || 'Sin identificar'
-        map[key] = (map[key]||0)+1
-      })
-      const arr = Object.entries(map)
-        .sort((a,b) => b[1]-a[1])
-        .slice(0,10)
-        .map(([nombre,leads]) => ({ nombre, leads }))
-      setOrigenLeads(arr)
-    }
-
-    // --- Leads y ventas por campaña usando campana_id FK directo ---
-    const [lCamp, vCampDirect, campList] = await Promise.all([
-      fetchAll('mkt_leads',  'campana_id', 'campana_id'),
-      fetchAll('mkt_ventas', 'campana_id', 'campana_id', ventaFilters),
-      supabase.from('mkt_campanas').select('id,codigo,nombre,marca,rubro').then(r => r.data || [])
-    ])
-    if (campList?.length) {
-      const campMap = {}
-      campList.forEach(c => { campMap[c.id] = c })
-      const lMap = {}
-      lCamp.forEach(l => { lMap[l.campana_id] = (lMap[l.campana_id]||0)+1 })
-      const vMap = {}
-      vCampDirect.forEach(v => { vMap[v.campana_id] = (vMap[v.campana_id]||0)+1 })
-      const result = []
-      Object.entries(vMap).forEach(([id, ventas]) => {
-        const camp = campMap[id]
-        if (!camp) return
-        result.push({ id, nombre:camp.nombre, marca:camp.marca, rubro:camp.rubro, leads:lMap[id]||0, ventas })
-      })
-      setCampLeads(result.sort((a,b) => b.ventas - a.ventas))
-    }
-
-    setLoading(false)
-  }, [desde, hasta, marcaFiltro, rubroFiltro, campanaFiltro])
-
-  useEffect(() => { load() }, [load])
-
-  useEffect(() => {
-    supabase.from('mkt_campanas').select('id,codigo,nombre,marca,rubro')
-      .eq('activo', true).order('nombre')
-      .then(({ data }) => setCampanaList(data || []))
-  }, [])
-
-  useEffect(() => {
-    if (!campanaFiltro) { setCampDetalle(null); return }
-    setLoadingDet(true)
-    Promise.all([
-      supabase.from('mkt_campanas').select('id,codigo,nombre,marca,rubro,activo').eq('id', campanaFiltro).single(),
-      supabase.from('mkt_ventas').select('id,pv_solicitud,fecha,nombre,dni,vendedor,metodo_match,margen_bruto,bonificacion_terminal,resultado_bruto,gestoria').eq('campana_id', campanaFiltro).order('fecha', { ascending: false }),
-      supabase.from('mkt_gastos').select('id,concepto,monto,fecha,proveedor').eq('campana_id', campanaFiltro).order('fecha', { ascending: false }),
-      supabase.from('mkt_leads').select('*', { count:'exact', head:true }).eq('campana_id', campanaFiltro),
-      supabase.from('mkt_leads').select('*', { count:'exact', head:true }).eq('campana_id', campanaFiltro).eq('fuente','manual')
-    ]).then(([{ data: camp }, { data: preventas }, { data: gastos }, { count: leadsDigital }, { count: leadsEvento }]) => {
-      setCampDetalle({ camp, preventas: preventas||[], gastos: gastos||[], leadsDigital: leadsDigital||0, leadsEvento: leadsEvento||0 })
-      setLoadingDet(false)
-    })
-  }, [campanaFiltro])
-
-  const pctConversion = fmtPct(kpis ? kpis.ventasConLead : 0, kpis ? kpis.totalVentas : 0)
-  const pieMarcas     = porMarca.slice(0,8).map((m,i) => ({ name: m.marca, value: m.ventas, leads: m.leads }))
-  const pieMarcasL    = porMarca.filter(m => m.leads > 0).slice(0,8).map(m => ({ name: m.marca, value: m.leads }))
-  const campFiltered  = rubroFiltro.length > 0 ? campLeads.filter(c => rubroFiltro.includes(c.rubro)) : campLeads
+  const pieMarcas  = porMarca.slice(0,8).map((m,i) => ({ name:m.marca, value:m.ventas }))
 
   return (
     <div className="space-y-4">
@@ -255,16 +68,20 @@ export default function Dashboard() {
             className="text-xs px-2.5 py-1 rounded-lg flex-shrink-0" style={{ background:'#1a2e00', color:BRAND, border:'1px solid #2a3d00' }}>Año</button>
           <div className="filter-sep"/>
 
-          {/* Marca */}
+          {/* Marca - multi-select */}
           <span className="text-xs text-gray-600 font-bold uppercase flex-shrink-0">Marca</span>
-          {MARCAS.map(m => (
-            <button key={m} onClick={() => toggleMarca(m)}
-              className="text-xs px-2.5 py-1 rounded-lg font-medium flex-shrink-0 transition-all"
-              style={{
-                background: marcaFiltro.includes(m) ? BRAND : '#1a1a1a',
-                color:      marcaFiltro.includes(m) ? '#000' : '#6b7280',
-                border:    `1px solid ${marcaFiltro.includes(m) ? BRAND : '#2a2a2a'}`
-              }}>{m}</button>
+          <div className="relative flex-shrink-0">
+            <select className="input-dark" style={{ minWidth:160 }}
+              onChange={e => { const v = e.target.value; if (v && !marcaFiltro.includes(v)) setMarcaFiltro(p => [...p, v]) }}>
+              <option value="">{marcaFiltro.length ? marcaFiltro.join(', ') : 'Todas las marcas'}</option>
+              {MARCAS.filter(m => !marcaFiltro.includes(m)).map(m => <option key={m} value={m}>{m}</option>)}
+            </select>
+          </div>
+          {marcaFiltro.map(m => (
+            <span key={m} className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-lg flex-shrink-0"
+              style={{ background:'#1a2e00', color: BRAND, border:`1px solid ${BRAND}33` }}>
+              {m} <button onClick={() => setMarcaFiltro(p => p.filter(x=>x!==m))} style={{ color:'#6b7280' }}>✕</button>
+            </span>
           ))}
           <div className="filter-sep"/>
 
@@ -496,28 +313,7 @@ export default function Dashboard() {
         </div>
 
         {/* Conversión por marca — barras */}
-        <div className="card">
-          <div className="section-header"><h2>Conversión por marca</h2></div>
-          <div className="space-y-2 mt-1">
-            {porMarca.filter(m => m.ventas > 0).map((m,i) => {
-              const p = m.ventas > 0 ? (m.conLead/m.ventas*100).toFixed(1) : 0
-              return (
-                <div key={m.marca}>
-                  <div className="flex justify-between text-xs mb-1">
-                    <span className="font-medium text-white">{m.marca}</span>
-                    <span style={{ color: BRAND, fontWeight:700 }}>{p}%</span>
-                  </div>
-                  <div className="h-2 rounded-full" style={{ background:'#1f1f1f' }}>
-                    <div className="h-2 rounded-full" style={{ width: p+'%', background: PALETTE[i%PALETTE.length] }}/>
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-        </div>
-      </div>
-
-      {/* HISTÓRICO */}
+              {/* HISTÓRICO */}
       <div className="card">
         <div className="section-header">
           <h2>Histórico mensual — Leads vs Preventas</h2>
@@ -544,7 +340,7 @@ export default function Dashboard() {
         <div className="space-y-2 mt-2">
           {origenLeads.map((o, i) => {
             const max = origenLeads[0]?.leads || 1
-            const pctBar = Math.round(o.leads * 100 / max)
+            const pctBar = Math.round(o.leads * 100 / (pctTotal||1))
             const pctTotal = origenLeads.reduce((s,x)=>s+x.leads,0)
             const pctOf = Math.round(o.leads * 100 / (pctTotal||1))
             return (
