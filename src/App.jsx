@@ -56,8 +56,8 @@ export default function App() {
         {/* Logo */}
         <div className="px-3 py-3 border-b" style={{ borderColor: '#1f1f1f' }}>
           <img src="/logo-randazzo.png" alt="Grupo Randazzo" style={{ width:'100%', maxWidth:160, display:'block', margin:'0 auto' }} />
-          <div style={{ marginTop:8, textAlign:'center', background:'rgba(181,224,0,0.10)', border:'1px solid rgba(181,224,0,0.18)', borderRadius:6, padding:'3px 0' }}>
-            <span style={{ fontSize:'8px', fontWeight:800, letterSpacing:'0.13em', color:'#B5E000', textTransform:'uppercase' }}>Área de Marketing</span>
+          <div style={{ marginTop:6, textAlign:'center' }}>
+            <span style={{ fontSize:'9px', fontWeight:700, letterSpacing:'0.18em', color:'rgba(181,224,0,0.6)', textTransform:'uppercase' }}>Marketing</span>
           </div>
         </div>
 
