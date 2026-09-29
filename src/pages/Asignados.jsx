@@ -312,9 +312,17 @@ export default function Asignados() {
             <option>USADO</option>
             <option>PLAN AHORRO</option>
           </select>
-          <select className="input-dark" style={{ width: 170 }} value={filters.origen} onChange={e => sf('origen', e.target.value)}>
+          <select className="input-dark" style={{ width: 190 }} value={filters.origen} onChange={e => sf('origen', e.target.value)}>
             <option value="">Origen: todos</option>
-            {origenes.map(o => <option key={o} value={o}>{o}</option>)}
+            <option value="Internet">Internet</option>
+            <option value="De paso">De paso</option>
+            <option value="Llamadas entrantes">Llamadas entrantes</option>
+            <option value="Evento">Evento</option>
+            <option value="WhatsApp">WhatsApp</option>
+            <option value="Mercado Libre">Mercado Libre</option>
+            {origenes.filter(o => !['Internet','De paso','Llamadas entrantes','Evento','WhatsApp','Mercado Libre'].includes(o)).map(o => (
+              <option key={o} value={o}>{o}</option>
+            ))}
           </select>
           <div className="filter-sep"/>
           <button onClick={() => { setFilters({ search:'', tipo:'', campana_codigo:'', campana_id:'', mes:'', origen:'' }); setPage(0) }}
