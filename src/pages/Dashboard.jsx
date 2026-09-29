@@ -6,6 +6,7 @@ import {
 } from 'recharts'
 
 const BRAND   = '#B5E000'
+const GRAY3   = '#2a2a2a'
 const PALETTE = ['#B5E000','#8ca800','#5f7200','#d4f000','#a3c200','#3d5200','#6b8a00','#e8ff4d']
 
 const fmt      = n  => (n || 0).toLocaleString('es-AR')
@@ -44,10 +45,14 @@ export default function Dashboard() {
     campanaFiltro, setCampanaFiltro, campanaList,
     limpiarFiltros, loading, loadingDet,
     kpis, porMarca, historico, campLeads, origenLeads,
-    campDetalle, campFiltered,
+    campDetalle,
   } = useDashboard()
 
-  const pieMarcas  = porMarca.slice(0,8).map((m,i) => ({ name:m.marca, value:m.ventas }))
+  const campFiltered = rubroFiltro.length>0 ? campLeads.filter(c=>rubroFiltro.includes(c.rubro)) : campLeads
+
+  // Derived values
+  const pieMarcas      = porMarca.slice(0,8).map((m,i) => ({ name:m.marca, value:m.ventas }))
+  const pctConversion  = fmtPct(kpis ? kpis.ventasConLead : 0, kpis ? kpis.totalVentas : 0)
 
   return (
     <div className="space-y-4">
@@ -307,13 +312,14 @@ export default function Dashboard() {
                 {pieMarcas.map((_,i) => <Cell key={i} fill={PALETTE[i%PALETTE.length]} />)}
               </Pie>
               <Tooltip content={<TipCustom />} />
-              <Legend content={<PieLegendCustom />} />
+              <Legend content={<PieLegend />} />
             </PieChart>
           </ResponsiveContainer>
         </div>
 
-        {/* Conversión por marca — barras */}
-              {/* HISTÓRICO */}
+      </div>
+
+      {/* HISTÓRICO */}
       <div className="card">
         <div className="section-header">
           <h2>Histórico mensual — Leads vs Preventas</h2>
@@ -339,10 +345,8 @@ export default function Dashboard() {
         </div>
         <div className="space-y-2 mt-2">
           {origenLeads.map((o, i) => {
-            const max = origenLeads[0]?.leads || 1
-            const pctBar = Math.round(o.leads * 100 / (pctTotal||1))
-            const pctTotal = origenLeads.reduce((s,x)=>s+x.leads,0)
-            const pctOf = Math.round(o.leads * 100 / (pctTotal||1))
+            const pctBar = o.pct || 0
+            const pctOf  = o.pct || 0
             return (
               <div key={o.nombre}>
                 <div className="flex justify-between items-center mb-1">
