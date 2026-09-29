@@ -121,10 +121,10 @@ export function useDashboard() {
     if (hasta)              ventaFilters.push(q=>q.lte('fecha',hasta))
     if (marcaFiltro.length) ventaFilters.push(q=>q.in('marca',marcaFiltro))
 
-    const [lCamp, vCamp, campListData] = await Promise.all([
-      fetchAll('mkt_leads','campana_id','campana_id'),
+    const [vCamp, campListData, lCamp] = await Promise.all([
       fetchAll('mkt_ventas','campana_id','campana_id',ventaFilters),
-      supabase.from('mkt_campanas').select('id,nombre,marca,rubro').then(r=>r.data||[])
+      supabase.from('mkt_campanas').select('id,nombre,marca,rubro').then(r=>r.data||[]),
+      fetchAll('mkt_leads','campana_id','campana_id')
     ])
     const cMap={}; campListData.forEach(c=>{cMap[c.id]=c})
     const lMap={}; lCamp.forEach(l=>{lMap[l.campana_id]=(lMap[l.campana_id]||0)+1})
