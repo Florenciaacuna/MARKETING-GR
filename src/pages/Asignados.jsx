@@ -5,7 +5,6 @@ import { supabase } from '../lib/supabase'
 const BRAND = '#B5E000'
 const PAGE  = 50
 
-// Helpers fuera del componente para evitar problemas de parsing
 function normPhone(p) {
   if (!p) return null
   const raw = String(p)
@@ -43,11 +42,16 @@ export default function Asignados() {
   const [running,        setRunning]        = useState(false)
   const [runLog,         setRunLog]         = useState([])
   const [page,           setPage]           = useState(0)
-  const [filters,        setFilters]        = useState({ search: '', tipo: '', campana_codigo: '', campana_id: '', mes: '', origen: '', canales: [] })
+  // CAMBIO: se agrega sub_origen al estado de filtros
+  const [filters,        setFilters]        = useState({
+    search: '', tipo: '', campana_codigo: '', campana_id: '',
+    mes: '', origen: '', sub_origen: '', canales: []
+  })
   const [meses,          setMeses]          = useState([])
   const [codigosCampana, setCodigosCampana] = useState([])
   const [campanas,       setCampanas]       = useState([])
   const [origenes,       setOrigenes]       = useState([])
+  const [subOrigenes,    setSubOrigenes]    = useState([])   // NUEVO
   const [canalesList,    setCanalesList]    = useState([])
   const [editing,        setEditing]        = useState(null)
   const [saving,         setSaving]         = useState(false)
@@ -66,13 +70,17 @@ export default function Asignados() {
       })
     supabase.from('mkt_campanas').select('id,codigo,nombre').order('nombre')
       .then(({ data: d }) => setCampanas(d || []))
-    // Origenes de leads
     supabase.from('mkt_leads').select('origen').not('origen','is',null).limit(1000)
       .then(({ data: d }) => {
         if (!d) return
         setOrigenes([...new Set(d.map(r => r.origen).filter(Boolean))].sort())
       })
-    // Canales: solo de leads vinculados a preventas (valores limpios como Internet, Cita Vendedor)
+    // NUEVO: cargar valores únicos de sub_origen para el filtro
+    supabase.from('mkt_leads').select('sub_origen').not('sub_origen','is',null).limit(1000)
+      .then(({ data: d }) => {
+        if (!d) return
+        setSubOrigenes([...new Set(d.map(r => r.sub_origen).filter(Boolean))].sort())
+      })
     supabase.from('mkt_ventas').select('mkt_leads!mkt_ventas_lead_id_fkey(canal)')
       .not('lead_id','is',null).limit(5000)
       .then(({ data: d }) => {
@@ -97,9 +105,7 @@ export default function Asignados() {
   const loadFilteredStats = useCallback(async () => {
     if (tab !== 'digital') { setFilteredStats(null); return }
     let leadIdsFiltro = null
-    if (filters.campana_id === '__con__') {
-      // Solo preventas con campaña asignada
-    } else if (filters.campana_id) {
+    if (filters.campana_id && filters.campana_id !== '__con__') {
       const { data: ml } = await supabase.from('mkt_leads').select('id').eq('campana_id', filters.campana_id)
       leadIdsFiltro = (ml || []).map(l => l.id)
     }
@@ -128,33 +134,44 @@ export default function Asignados() {
 
   const loadData = useCallback(async () => {
     setLoading(true)
+
+    // CAMBIO: pre-fetch server-side de lead IDs para todos los filtros de mkt_leads
+    // (origen, sub_origen, canales, campana_id) — evita filtrado client-side ineficiente
     let leadIdsFiltro = null
-    if (filters.campana_id && filters.campana_id !== '__con__') {
-      let lq = supabase.from('mkt_leads').select('id').eq('campana_id', filters.campana_id)
+    const hasCampanaFilter = filters.campana_id && filters.campana_id !== '__con__'
+    const hasLeadFilter = hasCampanaFilter
+      || (filters.canales?.length > 0)
+      || !!filters.origen
+      || !!filters.sub_origen
+
+    if (hasLeadFilter) {
+      let lq = supabase.from('mkt_leads').select('id')
+      if (hasCampanaFilter)            lq = lq.eq('campana_id', filters.campana_id)
       if (filters.canales?.length > 0) lq = lq.in('canal', filters.canales)
+      if (filters.origen)              lq = lq.eq('origen', filters.origen)
+      if (filters.sub_origen)          lq = lq.eq('sub_origen', filters.sub_origen)
       const { data: ml } = await lq
       leadIdsFiltro = (ml || []).map(l => l.id)
-    } else if (filters.canales?.length > 0) {
-      const { data: ml } = await supabase.from('mkt_leads').select('id').in('canal', filters.canales)
-      leadIdsFiltro = (ml || []).map(l => l.id)
     }
+
+    // CAMBIO: se agrega sub_origen al select de mkt_leads (join) y al de mkt_ventas
     let q = supabase.from('mkt_ventas')
-      .select('id,pv_solicitud,fecha,tipo,nombre,dni,vendedor,marca,fuente,metodo_match,lead_id,campana_id,proceso,lead_origen,mkt_campanas!mkt_ventas_campana_id_fkey(id,nombre),mkt_leads!mkt_ventas_lead_id_fkey(id,nro_tramite,canal,codigo_campana,origen,fecha_consulta)')
+      .select('id,pv_solicitud,fecha,tipo,nombre,dni,vendedor,marca,fuente,metodo_match,lead_id,campana_id,proceso,lead_origen,sub_origen,mkt_campanas!mkt_ventas_campana_id_fkey(id,nombre),mkt_leads!mkt_ventas_lead_id_fkey(id,nro_tramite,canal,codigo_campana,origen,sub_origen,fecha_consulta)')
       .order('fecha', { ascending: false })
       .range(page * PAGE, (page + 1) * PAGE - 1)
+
     if (tab === 'digital') q = q.not('lead_id','is',null)
-    else q = q.is('lead_id',null)
+    else                   q = q.is('lead_id',null)
     if (filters.tipo)   q = q.ilike('tipo','%' + filters.tipo + '%')
     if (filters.mes)    q = q.gte('fecha', filters.mes + '-01').lte('fecha', filters.mes + '-31')
     if (filters.search) q = q.or('nombre.ilike.%' + filters.search + '%,dni.eq.' + filters.search + ',pv_solicitud.ilike.%' + filters.search + '%')
     if (filters.campana_id === '__con__') q = q.not('campana_id','is',null)
-    if (filters.canales?.length > 0) {
-      // Filter through leads with matching canal
-    }
+
     if (leadIdsFiltro !== null) {
       if (leadIdsFiltro.length > 0) q = q.in('lead_id', leadIdsFiltro)
       else q = q.eq('id','00000000-0000-0000-0000-000000000000')
     }
+
     const { data: rows } = await q
     setData(rows || [])
     setLoading(false)
@@ -168,7 +185,10 @@ export default function Asignados() {
     log('Cargando leads...')
     let allLeads = []; let from = 0
     while (true) {
-      const { data: batch } = await supabase.from('mkt_leads').select('id,dni,telefono,celular,campana_id,codigo_campana,nro_tramite,job_seq,origen').range(from, from+999)
+      // CAMBIO: se agrega sub_origen al select de leads para el cruce
+      const { data: batch } = await supabase.from('mkt_leads')
+        .select('id,dni,telefono,celular,campana_id,codigo_campana,nro_tramite,job_seq,origen,sub_origen')
+        .range(from, from+999)
       if (!batch || batch.length === 0) break
       allLeads = allLeads.concat(batch)
       if (batch.length < 1000) break
@@ -178,42 +198,57 @@ export default function Asignados() {
     log('Cargando preventas...')
     let allVentas = []; from = 0
     while (true) {
-      const { data: batch } = await supabase.from('mkt_ventas').select('id,dni,telefono_personal,celular_personal,proceso').range(from, from+999)
+      const { data: batch } = await supabase.from('mkt_ventas')
+        .select('id,dni,telefono_personal,celular_personal,proceso')
+        .range(from, from+999)
       if (!batch || batch.length === 0) break
       allVentas = allVentas.concat(batch)
       if (batch.length < 1000) break
       from += 1000
     }
-    log('Prepreventas cargadas: ' + allVentas.length)
-    log('Construyendo indices...')
-    const byDNI = new Map(); const byPhone = new Map(); const byPhone8 = new Map(); const byJobSeq = new Map()
+    log('Preventas cargadas: ' + allVentas.length)
+    log('Construyendo índices...')
+    const byDNI = new Map(); const byPhone = new Map(); const byJobSeq = new Map()
     for (const lead of allLeads) {
       const dni = normDNI(lead.dni)
       const phones = [normPhone(lead.telefono), normPhone(lead.celular)].filter(Boolean)
       if (dni) byDNI.set(dni, lead)
-      for (const p of phones) { byPhone.set(p, lead); if (p.length >= 8) byPhone8.set(p.slice(-8), lead) }
+      for (const p of phones) { byPhone.set(p, lead) }
       if (lead.job_seq) byJobSeq.set(String(lead.job_seq), lead)
     }
-    log('Indices - DNI: ' + byDNI.size + ' | Tel: ' + byPhone.size + ' | Tel8: ' + byPhone8.size + ' | JOB_SEQ: ' + byJobSeq.size)
+    log('Índices - DNI: ' + byDNI.size + ' | Tel: ' + byPhone.size + ' | JOB_SEQ: ' + byJobSeq.size)
     log('Ejecutando cruce...')
-    const updates = []; let mP = 0, mD = 0, mT = 0, mT8 = 0, sinM = 0
+    const updates = []; let mP = 0, mD = 0, mT = 0, sinM = 0
     for (const v of allVentas) {
       const vP = v.proceso ? String(v.proceso).trim() : null
       const vD = normDNI(v.dni)
       const vPhones = [normPhone(v.telefono_personal), normPhone(v.celular_personal)].filter(Boolean)
       let lead = null; let metodo = null
-      if (vP && byJobSeq.has(vP))        { lead = byJobSeq.get(vP); metodo = 'proceso';    mP++ }
-      if (!lead && vD && byDNI.has(vD))  { lead = byDNI.get(vD);    metodo = 'dni';        mD++ }
-      if (!lead) { for (const p of vPhones) if (byPhone.has(p))  { lead = byPhone.get(p);  metodo = 'telefono';  mT++;  break } }
-      // tel_parcial removido — generaba falsos positivos con últimos 8 dígitos
+      if (vP && byJobSeq.has(vP))       { lead = byJobSeq.get(vP); metodo = 'proceso';   mP++ }
+      if (!lead && vD && byDNI.has(vD)) { lead = byDNI.get(vD);    metodo = 'dni';       mD++ }
+      if (!lead) { for (const p of vPhones) if (byPhone.has(p)) { lead = byPhone.get(p); metodo = 'telefono'; mT++; break } }
       if (!lead) sinM++
-      updates.push({ id: v.id, lead_id: lead ? lead.id : null, campana_id: lead ? lead.campana_id : null, metodo_match: metodo, lead_origen: lead ? lead.origen : null })
+      // CAMBIO: se agrega sub_origen al update
+      updates.push({
+        id:           v.id,
+        lead_id:      lead ? lead.id        : null,
+        campana_id:   lead ? lead.campana_id : null,
+        metodo_match: metodo,
+        lead_origen:  lead ? lead.origen    : null,
+        sub_origen:   lead ? lead.sub_origen : null,
+      })
     }
-    log('Matches - JOB_SEQ: ' + mP + ' | DNI: ' + mD + ' | Tel: ' + mT + ' | Tel8: ' + mT8 + ' | Sin match: ' + sinM)
+    log('Matches - JOB_SEQ: ' + mP + ' | DNI: ' + mD + ' | Tel: ' + mT + ' | Sin match: ' + sinM)
     log('Guardando...')
     for (let i = 0; i < updates.length; i += 100) {
       const batch = updates.slice(i, i+100)
-      await Promise.all(batch.map(u => supabase.from('mkt_ventas').update({ lead_id: u.lead_id, campana_id: u.campana_id, metodo_match: u.metodo_match, lead_origen: u.lead_origen }).eq('id', u.id)))
+      await Promise.all(batch.map(u => supabase.from('mkt_ventas').update({
+        lead_id:      u.lead_id,
+        campana_id:   u.campana_id,
+        metodo_match: u.metodo_match,
+        lead_origen:  u.lead_origen,
+        sub_origen:   u.sub_origen,   // NUEVO
+      }).eq('id', u.id)))
     }
     log('Cruce completado. ' + updates.length + ' preventas actualizadas.')
     setRunning(false); loadStats(); loadData()
@@ -227,7 +262,8 @@ export default function Asignados() {
       await supabase.from('mkt_ventas').update({ metodo_match: value || null }).eq('id', id)
     } else if (field === 'campana_id') {
       await supabase.from('mkt_ventas').update({ campana_id: value || null }).eq('id', id)
-    } else if ((field === 'canal' || field === 'codigo_campana') && leadId) {
+    } else if (['canal', 'codigo_campana', 'sub_origen'].includes(field) && leadId) {
+      // CAMBIO: sub_origen también es editable en mkt_leads
       await supabase.from('mkt_leads').update({ [field]: value || null }).eq('id', leadId)
     }
     setEditing(null); setSaving(false); loadData()
@@ -235,14 +271,13 @@ export default function Asignados() {
 
   const sf = (k, v) => { setFilters(p => ({ ...p, [k]: v })); setPage(0) }
   const pctDigital = safePct(stats ? stats.digital : 0, stats ? stats.totalV : 0)
-  const pctFiltEnt = filteredStats ? safePct(filteredStats.conEntrega, filteredStats.total) : 0
 
   return (
-    <div className="space-y-5">
+    // CAMBIO: minWidth:0 permite que el contenido se encoja en pantalla dividida
+    <div className="space-y-5" style={{ minWidth: 0 }}>
 
       <div className="card">
         <div className="flex items-start justify-between mb-4">
-          
           <button onClick={ejecutarCruce} disabled={running} className="btn-primary">
             {running ? 'Ejecutando...' : 'Ejecutar cruce'}
           </button>
@@ -256,7 +291,7 @@ export default function Asignados() {
             </div>
             <div className="rounded-lg p-4 border" style={{ background:'#1a2e00', borderColor: BRAND }}>
               <div className="text-2xl font-black" style={{ color: BRAND }}>{stats.digital.toLocaleString('es-AR')}</div>
-              <div className="text-xs mt-1 uppercase font-bold" style={{ color: BRAND }}>Con lead digital - {pctDigital}%</div>
+              <div className="text-xs mt-1 uppercase font-bold" style={{ color: BRAND }}>Con lead digital — {pctDigital}%</div>
             </div>
             <div className="rounded-lg p-4 border" style={{ background:'#111', borderColor:'#2a2a2a' }}>
               <div className="text-2xl font-black text-white">{stats.otros.toLocaleString('es-AR')}</div>
@@ -274,10 +309,9 @@ export default function Asignados() {
         )}
       </div>
 
-
-
       {runLog.length > 0 && (
-        <div className="rounded-xl p-4 font-mono text-xs text-gray-300 overflow-y-auto max-h-48" style={{ background:'#0a0a0a', border:'1px solid #1f1f1f' }}>
+        <div className="rounded-xl p-4 font-mono text-xs text-gray-300 overflow-y-auto max-h-48"
+          style={{ background:'#0a0a0a', border:'1px solid #1f1f1f' }}>
           {runLog.map((line, i) => (
             <div key={i} className="leading-relaxed">
               <span className="text-gray-600">[{String(i+1).padStart(2,'0')}]</span> {line}
@@ -312,7 +346,9 @@ export default function Asignados() {
           <input className="input-dark" style={{ width: 200 }} placeholder="Buscar cliente, DNI, PV..."
             value={filters.search} onChange={e => sf('search', e.target.value)} />
           <div className="filter-sep"/>
-          <select className="input-dark" style={{ width:200 }} value={filters.campana_id === '__con__' ? '' : (filters.campana_id||'')} onChange={e => sf('campana_id', e.target.value)}>
+          <select className="input-dark" style={{ width:200 }}
+            value={filters.campana_id === '__con__' ? '' : (filters.campana_id||'')}
+            onChange={e => sf('campana_id', e.target.value)}>
             <option value="">Campaña: todas</option>
             {campanas.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
           </select>
@@ -329,7 +365,9 @@ export default function Asignados() {
             <option>USADO</option>
             <option>PLAN AHORRO</option>
           </select>
-          <select className="input-dark" style={{ width: 190 }} value={filters.origen} onChange={e => sf('origen', e.target.value)}>
+          <div className="filter-sep"/>
+          {/* Origen — server-side via pre-fetch de lead IDs */}
+          <select className="input-dark" style={{ width: 170 }} value={filters.origen} onChange={e => sf('origen', e.target.value)}>
             <option value="">Origen: todos</option>
             <option value="Internet">Internet</option>
             <option value="De paso">De paso</option>
@@ -337,12 +375,17 @@ export default function Asignados() {
             <option value="Evento">Evento</option>
             <option value="WhatsApp">WhatsApp</option>
             <option value="Mercado Libre">Mercado Libre</option>
-            {origenes.filter(o => !['Internet','De paso','Llamadas entrantes','Evento','WhatsApp','Mercado Libre'].includes(o)).map(o => (
-              <option key={o} value={o}>{o}</option>
-            ))}
+            {origenes
+              .filter(o => !['Internet','De paso','Llamadas entrantes','Evento','WhatsApp','Mercado Libre'].includes(o))
+              .map(o => <option key={o} value={o}>{o}</option>)}
+          </select>
+          {/* NUEVO: Sub-origen — server-side */}
+          <select className="input-dark" style={{ width: 170 }} value={filters.sub_origen} onChange={e => sf('sub_origen', e.target.value)}>
+            <option value="">Sub-origen: todos</option>
+            {subOrigenes.map(s => <option key={s} value={s}>{s}</option>)}
           </select>
           <div className="filter-sep"/>
-          {/* Canal - multi-select */}
+          {/* Canal — multi-select */}
           <div className="relative flex-shrink-0">
             <select className="input-dark" style={{ width:170 }}
               onChange={e => { const v=e.target.value; if(v && !(filters.canales||[]).includes(v)) sf('canales',[...(filters.canales||[]),v]) }}>
@@ -353,22 +396,25 @@ export default function Asignados() {
           {(filters.canales||[]).map(c => (
             <span key={c} className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-lg flex-shrink-0"
               style={{ background:'#1a2e00', color:'#B5E000', border:'1px solid rgba(181,224,0,0.2)' }}>
-              {c} <button onClick={() => sf('canales',(filters.canales||[]).filter(x=>x!==c))} style={{ color:'#6b7280' }}>✕</button>
+              {c}
+              <button onClick={() => sf('canales',(filters.canales||[]).filter(x=>x!==c))} style={{ color:'#6b7280' }}>✕</button>
             </span>
           ))}
           <div className="filter-sep"/>
-          <button onClick={() => { setFilters({ search:'', tipo:'', campana_codigo:'', campana_id:'', mes:'', origen:'', canales:[] }); setPage(0) }}
-            className="btn-ghost text-xs flex-shrink-0">Limpiar</button>
+          <button
+            onClick={() => { setFilters({ search:'', tipo:'', campana_codigo:'', campana_id:'', mes:'', origen:'', sub_origen:'', canales:[] }); setPage(0) }}
+            className="btn-ghost text-xs flex-shrink-0">
+            Limpiar
+          </button>
         </div>
 
         <div className="filter-results">
           Mostrando <span>{data.length}</span> registros
-          {filters.mes && <span> - Mes: <span>{new Date(filters.mes+'-15').toLocaleString('es-AR',{month:'long',year:'numeric'})}</span></span>}
-          {filters.tipo && <span> - Tipo: <span>{filters.tipo}</span></span>}
-          {filters.origen && <span> - Origen: <span>{filters.origen}</span></span>}
+          {filters.mes && <span> — Mes: <span>{new Date(filters.mes+'-15').toLocaleString('es-AR',{month:'long',year:'numeric'})}</span></span>}
+          {filters.tipo && <span> — Tipo: <span>{filters.tipo}</span></span>}
+          {filters.origen && <span> — Origen: <span>{filters.origen}</span></span>}
+          {filters.sub_origen && <span> — Sub-origen: <span>{filters.sub_origen}</span></span>}
         </div>
-
-
 
         {tab === 'otros' && (
           <div className="rounded-xl p-4 mb-3 flex items-start gap-3"
@@ -384,8 +430,10 @@ export default function Asignados() {
             </div>
           </div>
         )}
+
+        {/* CAMBIO: minWidth fijo para que el scroll interno funcione en pantalla dividida */}
         <div className="overflow-x-auto rounded-lg border" style={{ borderColor:'#2a2a2a' }}>
-          <table className="dark-table">
+          <table className="dark-table" style={{ minWidth: tab === 'digital' ? 1060 : 700 }}>
             <thead>
               <tr>
                 <th>PV</th>
@@ -398,8 +446,9 @@ export default function Asignados() {
                 {tab === 'digital' && (
                   <>
                     <th>Origen</th>
+                    <th>Sub-origen</th>   {/* NUEVO */}
                     <th>Canal</th>
-                    <th>Campana</th>
+                    <th>Campaña</th>
                     <th>Match</th>
                   </>
                 )}
@@ -408,120 +457,162 @@ export default function Asignados() {
             </thead>
             <tbody>
               {loading && (
-                <tr><td colSpan={10} className="text-center py-8 text-gray-600">Cargando...</td></tr>
+                <tr><td colSpan={13} className="text-center py-8 text-gray-600">Cargando...</td></tr>
               )}
               {!loading && data.length === 0 && (
-                <tr><td colSpan={10} className="text-center py-10 text-gray-600">
-                  {tab === 'digital' ? 'Sin preventas con lead. Ejecuta el cruce primero.' : 'Todas las preventas tienen lead.'}
+                <tr><td colSpan={13} className="text-center py-10 text-gray-600">
+                  {tab === 'digital' ? 'Sin preventas con lead. Ejecutá el cruce primero.' : 'Todas las preventas tienen lead.'}
                 </td></tr>
               )}
-              {data.filter(v => {
-                if (tab === 'digital' && v.lead_origen === 'De paso') return false
-                if (filters.origen) {
-                  const o = v.mkt_leads ? v.mkt_leads.origen : v.lead_origen
-                  return o === filters.origen
-                }
-                return true
-              }).map(v => {
-                const lead = v.mkt_leads
-                return (
-                  <tr key={v.id}>
-                    <td className="font-mono text-xs" style={{ color: BRAND, whiteSpace:'nowrap' }}>{v.pv_solicitud || '-'}</td>
-                    <td className="text-gray-500 text-xs whitespace-nowrap">{fmtDate(v.fecha)}</td>
-                    <td>{v.tipo ? <span className="badge badge-blue" style={{fontSize:'0.6rem'}}>{v.tipo}</span> : '-'}</td>
-                    <td className="font-medium text-white text-xs">{v.nombre || '-'}</td>
-                    <td className="font-mono text-xs text-gray-400">{v.dni || '-'}</td>
-                    <td className="text-gray-400 text-xs">{v.vendedor || '-'}</td>
-                    <td>{v.marca ? <span className="badge badge-gray" style={{fontSize:'0.6rem'}}>{v.marca}</span> : '-'}</td>
+              {data
+                // CAMBIO: De paso solo se oculta en digital si NO hay filtro de origen activo
+                .filter(v => {
+                  if (tab === 'digital' && !filters.origen && v.lead_origen === 'De paso') return false
+                  return true
+                })
+                .map(v => {
+                  const lead = v.mkt_leads
+                  // Sub-origen: primero del lead, fallback al guardado en mkt_ventas por el cruce
+                  const displaySubOrigen = lead?.sub_origen || v.sub_origen
 
-                    {tab === 'digital' && (
-                      <>
-                        <td className="text-xs">
-                          {lead && lead.origen ? <span className="badge badge-gray" style={{fontSize:'0.6rem'}}>{lead.origen}</span> : <span className="text-gray-600">-</span>}
-                        </td>
+                  return (
+                    <tr key={v.id}>
+                      <td className="font-mono text-xs" style={{ color: BRAND, whiteSpace:'nowrap' }}>{v.pv_solicitud || '-'}</td>
+                      <td className="text-gray-500 text-xs whitespace-nowrap">{fmtDate(v.fecha)}</td>
+                      <td>{v.tipo ? <span className="badge badge-blue" style={{fontSize:'0.6rem'}}>{v.tipo}</span> : '-'}</td>
+                      <td className="font-medium text-white text-xs">{v.nombre || '-'}</td>
+                      <td className="font-mono text-xs text-gray-400">{v.dni || '-'}</td>
+                      <td className="text-gray-400 text-xs">{v.vendedor || '-'}</td>
+                      <td>{v.marca ? <span className="badge badge-gray" style={{fontSize:'0.6rem'}}>{v.marca}</span> : '-'}</td>
 
-                        <td onClick={() => !editing && setEditing({ id: v.id, field: 'canal', value: (lead && lead.canal) ? lead.canal : '', leadId: lead ? lead.id : null })}>
-                          {editing && editing.id === v.id && editing.field === 'canal' ? (
-                            <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
-                              <input autoFocus className="input-dark text-xs" style={{ width: 90, padding: '2px 6px', height: 24 }}
-                                value={editing.value}
-                                onChange={e => setEditing(p => ({ ...p, value: e.target.value }))}
-                                onKeyDown={e => { if (e.key === 'Enter') saveEdit(); if (e.key === 'Escape') setEditing(null) }} />
-                              <button onClick={saveEdit} disabled={saving} style={{ color: BRAND, fontSize: 11 }}>{saving ? '...' : 'ok'}</button>
-                              <button onClick={() => setEditing(null)} className="text-gray-600 text-xs">x</button>
-                            </div>
-                          ) : (
-                            <div className="cursor-pointer">
-                              {lead && lead.canal ? <span className="badge badge-blue" style={{fontSize:'0.6rem'}}>{lead.canal}</span> : <span className="text-gray-600 text-xs">- ed</span>}
-                            </div>
-                          )}
-                        </td>
+                      {tab === 'digital' && (
+                        <>
+                          {/* Origen */}
+                          <td className="text-xs">
+                            {lead?.origen
+                              ? <span className="badge badge-gray" style={{fontSize:'0.6rem'}}>{lead.origen}</span>
+                              : <span className="text-gray-600">-</span>}
+                          </td>
 
-                        <td>
-                          <div className="flex flex-col gap-0.5">
+                          {/* NUEVO: Sub-origen — editable en mkt_leads */}
+                          <td
+                            onClick={() => !editing && setEditing({
+                              id: v.id, field: 'sub_origen',
+                              value: displaySubOrigen || '',
+                              leadId: lead ? lead.id : null
+                            })}>
+                            {editing && editing.id === v.id && editing.field === 'sub_origen' ? (
+                              <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
+                                <input autoFocus className="input-dark text-xs"
+                                  style={{ width: 110, padding: '2px 6px', height: 24 }}
+                                  value={editing.value}
+                                  onChange={e => setEditing(p => ({ ...p, value: e.target.value }))}
+                                  onKeyDown={e => { if (e.key === 'Enter') saveEdit(); if (e.key === 'Escape') setEditing(null) }} />
+                                <button onClick={saveEdit} disabled={saving} style={{ color: BRAND, fontSize: 11 }}>{saving ? '...' : 'ok'}</button>
+                                <button onClick={() => setEditing(null)} className="text-gray-600 text-xs">x</button>
+                              </div>
+                            ) : (
+                              <div className="cursor-pointer">
+                                {displaySubOrigen
+                                  ? <span className="badge badge-green" style={{fontSize:'0.6rem'}}>{displaySubOrigen}</span>
+                                  : <span className="text-gray-600 text-xs">— ed</span>}
+                              </div>
+                            )}
+                          </td>
 
-                            <div className="cursor-pointer" onClick={() => !editing && setEditing({ id: v.id, field: 'campana_id', value: v.campana_id || '', leadId: null })}>
-                              {editing && editing.id === v.id && editing.field === 'campana_id' ? (
-                                <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
-                                  <select autoFocus className="input-dark text-xs" style={{ width: 130, padding: '2px 4px', height: 22 }}
-                                    value={editing.value} onChange={e => setEditing(p => ({ ...p, value: e.target.value }))}>
-                                    <option value="">Sin campana</option>
-                                    {campanas.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
-                                  </select>
-                                  <button onClick={saveEdit} disabled={saving} style={{ color: BRAND, fontSize: 10 }}>{saving ? '...' : 'ok'}</button>
-                                  <button onClick={() => setEditing(null)} className="text-gray-600 text-xs">x</button>
-                                </div>
-                              ) : (() => {
-                                  // Prioridad: campaña de la venta → campaña del lead → nada
+                          {/* Canal */}
+                          <td onClick={() => !editing && setEditing({
+                            id: v.id, field: 'canal',
+                            value: lead?.canal || '',
+                            leadId: lead ? lead.id : null
+                          })}>
+                            {editing && editing.id === v.id && editing.field === 'canal' ? (
+                              <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
+                                <input autoFocus className="input-dark text-xs"
+                                  style={{ width: 90, padding: '2px 6px', height: 24 }}
+                                  value={editing.value}
+                                  onChange={e => setEditing(p => ({ ...p, value: e.target.value }))}
+                                  onKeyDown={e => { if (e.key === 'Enter') saveEdit(); if (e.key === 'Escape') setEditing(null) }} />
+                                <button onClick={saveEdit} disabled={saving} style={{ color: BRAND, fontSize: 11 }}>{saving ? '...' : 'ok'}</button>
+                                <button onClick={() => setEditing(null)} className="text-gray-600 text-xs">x</button>
+                              </div>
+                            ) : (
+                              <div className="cursor-pointer">
+                                {lead?.canal
+                                  ? <span className="badge badge-blue" style={{fontSize:'0.6rem'}}>{lead.canal}</span>
+                                  : <span className="text-gray-600 text-xs">— ed</span>}
+                              </div>
+                            )}
+                          </td>
+
+                          {/* Campaña */}
+                          <td>
+                            <div className="flex flex-col gap-0.5">
+                              <div className="cursor-pointer"
+                                onClick={() => !editing && setEditing({ id: v.id, field: 'campana_id', value: v.campana_id || '', leadId: null })}>
+                                {editing && editing.id === v.id && editing.field === 'campana_id' ? (
+                                  <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
+                                    <select autoFocus className="input-dark text-xs"
+                                      style={{ width: 130, padding: '2px 4px', height: 22 }}
+                                      value={editing.value}
+                                      onChange={e => setEditing(p => ({ ...p, value: e.target.value }))}>
+                                      <option value="">Sin campaña</option>
+                                      {campanas.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+                                    </select>
+                                    <button onClick={saveEdit} disabled={saving} style={{ color: BRAND, fontSize: 10 }}>{saving ? '...' : 'ok'}</button>
+                                    <button onClick={() => setEditing(null)} className="text-gray-600 text-xs">x</button>
+                                  </div>
+                                ) : (() => {
                                   if (v.mkt_campanas) {
                                     return <span className="text-xs font-medium text-white">{v.mkt_campanas.nombre}</span>
                                   }
-                                  const lead = v.mkt_leads
-                                  if (lead && lead.codigo_campana) {
+                                  if (lead?.codigo_campana) {
                                     const c = campanas.find(x => x.codigo && x.codigo.toLowerCase() === lead.codigo_campana.toLowerCase())
                                     return <span className="text-xs" style={{ color:'#9ca3af' }}>{c ? c.nombre : `[${lead.codigo_campana}]`}</span>
                                   }
                                   return <span className="text-xs" style={{ color:'#374151' }}>—</span>
                                 })()}
+                              </div>
                             </div>
-                          </div>
-                        </td>
+                          </td>
 
-                        <td onClick={() => !editing && setEditing({ id: v.id, field: 'metodo_match', value: v.metodo_match || '', leadId: null })}>
-                          {editing && editing.id === v.id && editing.field === 'metodo_match' ? (
-                            <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
-                              <input autoFocus className="input-dark text-xs" style={{ width: 90, padding: '2px 6px', height: 24 }}
-                                value={editing.value}
-                                onChange={e => setEditing(p => ({ ...p, value: e.target.value }))}
-                                onKeyDown={e => { if (e.key === 'Enter') saveEdit(); if (e.key === 'Escape') setEditing(null) }} />
-                              <button onClick={saveEdit} disabled={saving} style={{ color: BRAND, fontSize: 11 }}>{saving ? '...' : 'ok'}</button>
-                              <button onClick={() => setEditing(null)} className="text-gray-600 text-xs">x</button>
-                            </div>
-                          ) : (
-                            <div className="cursor-pointer">
-                              {v.metodo_match ? (
-                                <span className={'badge ' + (['dni','proceso'].includes(v.metodo_match) ? 'badge-green' : v.metodo_match === 'manual' ? 'badge-blue' : 'badge-yellow')}>
-                                  {v.metodo_match}
-                                </span>
-                              ) : <span className="text-gray-600 text-xs">-</span>}
-                            </div>
-                          )}
-                        </td>
-                      </>
-                    )}
+                          {/* Match */}
+                          <td onClick={() => !editing && setEditing({ id: v.id, field: 'metodo_match', value: v.metodo_match || '', leadId: null })}>
+                            {editing && editing.id === v.id && editing.field === 'metodo_match' ? (
+                              <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
+                                <input autoFocus className="input-dark text-xs"
+                                  style={{ width: 90, padding: '2px 6px', height: 24 }}
+                                  value={editing.value}
+                                  onChange={e => setEditing(p => ({ ...p, value: e.target.value }))}
+                                  onKeyDown={e => { if (e.key === 'Enter') saveEdit(); if (e.key === 'Escape') setEditing(null) }} />
+                                <button onClick={saveEdit} disabled={saving} style={{ color: BRAND, fontSize: 11 }}>{saving ? '...' : 'ok'}</button>
+                                <button onClick={() => setEditing(null)} className="text-gray-600 text-xs">x</button>
+                              </div>
+                            ) : (
+                              <div className="cursor-pointer">
+                                {v.metodo_match ? (
+                                  <span className={'badge ' + (['dni','proceso'].includes(v.metodo_match) ? 'badge-green' : v.metodo_match === 'manual' ? 'badge-blue' : 'badge-yellow')}>
+                                    {v.metodo_match}
+                                  </span>
+                                ) : <span className="text-gray-600 text-xs">-</span>}
+                              </div>
+                            )}
+                          </td>
+                        </>
+                      )}
 
-                    {tab === 'otros' && (
-                      <td><span className="badge badge-gray">Sin coincidencia</span></td>
-                    )}
-                  </tr>
-                )
-              })}
+                      {tab === 'otros' && (
+                        <td><span className="badge badge-gray">Sin coincidencia</span></td>
+                      )}
+                    </tr>
+                  )
+                })}
             </tbody>
           </table>
         </div>
 
         <div className="flex items-center justify-between mt-3">
-          <span className="text-xs text-gray-600">Pagina {page + 1}</span>
+          <span className="text-xs text-gray-600">Página {page + 1}</span>
           <div className="flex gap-2">
             <button onClick={() => setPage(p => Math.max(0, p-1))} disabled={page === 0} className="btn-ghost text-xs">Anterior</button>
             <button onClick={() => setPage(p => p+1)} disabled={data.length < PAGE} className="btn-ghost text-xs">Siguiente</button>
