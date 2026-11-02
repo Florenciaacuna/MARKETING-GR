@@ -35,14 +35,14 @@ export default function Ventas() {
     let q = supabase.from('mkt_ventas')
       .select(`id,pv_solicitud,fecha,tipo,nombre,dni,telefono_personal,
                celular_personal,vendedor,marca,fuente,metodo_match,
-               lead_id,campana_id,proceso,
-               mkt_leads!mkt_ventas_lead_id_fkey(id,nro_tramite,nombre,dni,canal,codigo_campana),
+               cuil_cuit,email,nombre_conyuge,lead_id,campana_id,proceso,
+               mkt_leads!mkt_ventas_lead_id_fkey(id,nro_tramite,nombre,apellido,dni,canal,origen,sub_origen,codigo_campana,link_anuncio),
                mkt_campanas!mkt_ventas_campana_id_fkey(id,nombre,marca)`,
         { count: 'exact' })
       .order('fecha', { ascending: false })
       .range(page * PAGE, page * PAGE + PAGE - 1)
 
-    if (filters.search)  q = q.or(`nombre.ilike.%${filters.search}%,dni.eq.${filters.search},pv_solicitud.ilike.%${filters.search}%`)
+    if (filters.search)  q = q.or(`nombre.ilike.%${filters.search}%,dni.eq.${filters.search},pv_solicitud.ilike.%${filters.search}%,email.ilike.%${filters.search}%,nombre_conyuge.ilike.%${filters.search}%`)
     if (filters.tipo)    q = q.eq('tipo', filters.tipo)
     if (filters.marca)   q = q.eq('marca', filters.marca)
     if (filters.desde)   q = q.gte('fecha', filters.desde)
@@ -98,7 +98,7 @@ export default function Ventas() {
     setLeadSearch(q)
     if (q.length < 2) { setLeadResults([]); return }
     const { data } = await supabase.from('mkt_leads')
-      .select('id,nro_tramite,nombre,dni,canal,codigo_campana')
+      .select('id,nro_tramite,nombre,dni,canal,codigo_campana,campana_id,origen,sub_origen')
       .or(`nombre.ilike.%${q}%,dni.eq.${q},nro_tramite.eq.${q}`)
       .limit(8)
     setLeadResults(data || [])
@@ -109,7 +109,9 @@ export default function Ventas() {
     await supabase.from('mkt_ventas').update({
       lead_id:      lead.id,
       metodo_match: 'manual',
-      campana_id:   null // se puede setear aparte
+      campana_id:   lead.campana_id || null,
+      lead_origen:     lead.origen || null,
+      lead_sub_origen: lead.sub_origen || null
     }).eq('id', ventaId)
     setEditing(null); setLeadSearch(''); setLeadResults([])
     setSaving(false); load()
@@ -119,7 +121,7 @@ export default function Ventas() {
     if (!confirm('¿Desvincular el lead de esta preventa?')) return
     setSaving(true)
     await supabase.from('mkt_ventas').update({
-      lead_id: null, metodo_match: null
+      lead_id: null, metodo_match: null, lead_origen: null, lead_sub_origen: null
     }).eq('id', ventaId)
     setSaving(false); load()
   }
@@ -231,16 +233,21 @@ export default function Ventas() {
                 <th>TIPO</th>
                 <th>CLIENTE</th>
                 <th>DNI</th>
+                <th>CUIL/CUIT</th>
+                <th>CELULAR</th>
                 <th>TELÉFONO</th>
+                <th>EMAIL</th>
+                <th>CÓNYUGE</th>
                 <th>VENDEDOR</th>
                 <th>MARCA</th>
                 <th>LEAD VINCULADO</th>
+                <th>SUB-ORIGEN</th>
                 <th>CAMPAÑA</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={10} className="text-center text-gray-500 text-xs py-6">Cargando...</td></tr>
+                <tr><td colSpan={14} className="text-center text-gray-500 text-xs py-6">Cargando...</td></tr>
               ) : data.map(v => {
                 const lead  = v.mkt_leads
                 const camp  = v.mkt_campanas
@@ -254,7 +261,11 @@ export default function Ventas() {
                     <td><span className="badge badge-gray text-xs">{v.tipo}</span></td>
                     <td className="font-medium text-white text-xs">{v.nombre}</td>
                     <td className="font-mono text-xs text-gray-400">{v.dni || '-'}</td>
-                    <td className="text-xs text-gray-400">{v.celular_personal || v.telefono_personal || '-'}</td>
+                    <td className="font-mono text-xs text-gray-400 whitespace-nowrap">{v.cuil_cuit || '-'}</td>
+                    <td className="text-xs text-gray-400 whitespace-nowrap">{v.celular_personal || '-'}</td>
+                    <td className="text-xs text-gray-400 whitespace-nowrap">{v.telefono_personal || '-'}</td>
+                    <td className="text-xs text-gray-400" style={{ maxWidth:180 }}><div className="truncate" title={v.email||''}>{v.email || '-'}</div></td>
+                    <td className="text-xs text-gray-400">{v.nombre_conyuge || '-'}</td>
                     <td className="text-xs text-gray-400">{v.vendedor || '-'}</td>
                     <td className="text-xs text-gray-400">{v.marca}</td>
 
@@ -323,6 +334,19 @@ export default function Ventas() {
                           </div>
                         </div>
                       )}
+                    </td>
+
+                    {/* SUB-ORIGEN del lead vinculado */}
+                    <td className="text-xs whitespace-nowrap">
+                      {lead ? (
+                        <>
+                          <div className="text-gray-300">{lead.sub_origen || lead.origen || '-'}</div>
+                          {lead.link_anuncio && (
+                            <a href={lead.link_anuncio} target="_blank" rel="noopener noreferrer"
+                              onClick={e => e.stopPropagation()} style={{ color:BRAND, textDecoration:'underline' }}>Ver anuncio ↗</a>
+                          )}
+                        </>
+                      ) : <span className="text-gray-600">-</span>}
                     </td>
 
                     {/* CAMPAÑA — editable */}
