@@ -42,16 +42,12 @@ export default function Asignados() {
   const [running,        setRunning]        = useState(false)
   const [runLog,         setRunLog]         = useState([])
   const [page,           setPage]           = useState(0)
-  // CAMBIO: se agrega sub_origen al estado de filtros
-  const [filters,        setFilters]        = useState({
-    search: '', tipo: '', campana_codigo: '', campana_id: '',
-    mes: '', origen: '', sub_origen: '', canales: []
-  })
+  const [filters,        setFilters]        = useState({ search: '', tipo: '', campana_codigo: '', campana_id: '', mes: '', origen: '', sub_origen: '', canales: [] })
   const [meses,          setMeses]          = useState([])
   const [codigosCampana, setCodigosCampana] = useState([])
   const [campanas,       setCampanas]       = useState([])
   const [origenes,       setOrigenes]       = useState([])
-  const [subOrigenes,    setSubOrigenes]    = useState([])   // NUEVO
+  const [subOrigenes,    setSubOrigenes]    = useState([])
   const [canalesList,    setCanalesList]    = useState([])
   const [editing,        setEditing]        = useState(null)
   const [saving,         setSaving]         = useState(false)
@@ -70,17 +66,15 @@ export default function Asignados() {
       })
     supabase.from('mkt_campanas').select('id,codigo,nombre').order('nombre')
       .then(({ data: d }) => setCampanas(d || []))
+    // Origenes y sub-origenes desde mkt_leads
+    supabase.from('mkt_leads').select('sub_origen').not('sub_origen','is',null).limit(1000)
+      .then(({ data: d }) => { if (d) setSubOrigenes([...new Set(d.map(r => r.sub_origen).filter(Boolean))].sort()) })
     supabase.from('mkt_leads').select('origen').not('origen','is',null).limit(1000)
       .then(({ data: d }) => {
         if (!d) return
         setOrigenes([...new Set(d.map(r => r.origen).filter(Boolean))].sort())
       })
-    // NUEVO: cargar valores únicos de sub_origen para el filtro
-    supabase.from('mkt_leads').select('sub_origen').not('sub_origen','is',null).limit(1000)
-      .then(({ data: d }) => {
-        if (!d) return
-        setSubOrigenes([...new Set(d.map(r => r.sub_origen).filter(Boolean))].sort())
-      })
+    // Canales: solo de leads vinculados a preventas
     supabase.from('mkt_ventas').select('mkt_leads!mkt_ventas_lead_id_fkey(canal)')
       .not('lead_id','is',null).limit(5000)
       .then(({ data: d }) => {
@@ -113,11 +107,13 @@ export default function Asignados() {
     const entSet = new Set((ents || []).map(e => e.venta_id).filter(Boolean))
 
     let q = supabase.from('mkt_ventas').select('id,lead_origen').not('lead_id','is',null)
-    if (filters.tipo)   q = q.ilike('tipo', '%' + filters.tipo + '%')
-    if (filters.mes)    q = q.gte('fecha', filters.mes + '-01').lte('fecha', filters.mes + '-31')
-    if (filters.search) q = q.or('nombre.ilike.%' + filters.search + '%,dni.eq.' + filters.search + ',pv_solicitud.ilike.%' + filters.search + '%')
+    if (filters.tipo)       q = q.ilike('tipo', '%' + filters.tipo + '%')
+    if (filters.mes)        q = q.gte('fecha', filters.mes + '-01').lte('fecha', filters.mes + '-31')
+    if (filters.search)     q = q.or('nombre.ilike.%' + filters.search + '%,dni.eq.' + filters.search + ',pv_solicitud.ilike.%' + filters.search + '%,email.ilike.%' + filters.search + '%')
+    if (filters.origen)     q = q.eq('lead_origen', filters.origen)
+    if (filters.sub_origen) q = q.eq('lead_sub_origen', filters.sub_origen)
     if (filters.campana_id === '__con__') q = q.not('campana_id','is',null)
-    else if (filters.campana_id) q = q.eq('campana_id', filters.campana_id)
+    else if (filters.campana_id)          q = q.eq('campana_id', filters.campana_id)
     if (leadIdsFiltro) {
       if (leadIdsFiltro.length > 0) q = q.in('lead_id', leadIdsFiltro)
       else { setFilteredStats({ total:0, conEntrega:0, sinEntrega:0 }); return }
@@ -135,37 +131,36 @@ export default function Asignados() {
   const loadData = useCallback(async () => {
     setLoading(true)
 
-    // CAMBIO: pre-fetch server-side de lead IDs para todos los filtros de mkt_leads
-    // (origen, sub_origen, canales, campana_id) — evita filtrado client-side ineficiente
+    // Pre-fetch lead IDs solo cuando se filtra por campaña o canal
+    // (origen y sub_origen son columnas directas de mkt_ventas → van al query sin pre-fetch)
     let leadIdsFiltro = null
-    const hasCampanaFilter = filters.campana_id && filters.campana_id !== '__con__'
-    const hasLeadFilter = hasCampanaFilter
-      || (filters.canales?.length > 0)
-      || !!filters.origen
-      || !!filters.sub_origen
-
-    if (hasLeadFilter) {
-      let lq = supabase.from('mkt_leads').select('id')
-      if (hasCampanaFilter)            lq = lq.eq('campana_id', filters.campana_id)
+    if (filters.campana_id && filters.campana_id !== '__con__') {
+      let lq = supabase.from('mkt_leads').select('id').eq('campana_id', filters.campana_id)
       if (filters.canales?.length > 0) lq = lq.in('canal', filters.canales)
-      if (filters.origen)              lq = lq.eq('origen', filters.origen)
-      if (filters.sub_origen)          lq = lq.eq('sub_origen', filters.sub_origen)
       const { data: ml } = await lq
+      leadIdsFiltro = (ml || []).map(l => l.id)
+    } else if (filters.canales?.length > 0) {
+      const { data: ml } = await supabase.from('mkt_leads').select('id').in('canal', filters.canales)
       leadIdsFiltro = (ml || []).map(l => l.id)
     }
 
-    // CAMBIO: se agrega sub_origen al select de mkt_leads (join) y al de mkt_ventas
     let q = supabase.from('mkt_ventas')
-      .select('id,pv_solicitud,fecha,tipo,nombre,dni,vendedor,marca,fuente,metodo_match,lead_id,campana_id,proceso,lead_origen,sub_origen,mkt_campanas!mkt_ventas_campana_id_fkey(id,nombre),mkt_leads!mkt_ventas_lead_id_fkey(id,nro_tramite,canal,codigo_campana,origen,sub_origen,fecha_consulta)')
+      .select('id,pv_solicitud,fecha,tipo,nombre,dni,vendedor,marca,fuente,metodo_match,lead_id,campana_id,proceso,lead_origen,lead_sub_origen,cuil_cuit,email,nombre_conyuge,celular_personal,telefono_personal,mkt_campanas!mkt_ventas_campana_id_fkey(id,nombre),mkt_leads!mkt_ventas_lead_id_fkey(id,nro_tramite,canal,codigo_campana,campana_web,origen,sub_origen,link_anuncio,consulta,fecha_consulta)')
       .order('fecha', { ascending: false })
       .range(page * PAGE, (page + 1) * PAGE - 1)
 
     if (tab === 'digital') q = q.not('lead_id','is',null)
     else                   q = q.is('lead_id',null)
-    if (filters.tipo)   q = q.ilike('tipo','%' + filters.tipo + '%')
-    if (filters.mes)    q = q.gte('fecha', filters.mes + '-01').lte('fecha', filters.mes + '-31')
-    if (filters.search) q = q.or('nombre.ilike.%' + filters.search + '%,dni.eq.' + filters.search + ',pv_solicitud.ilike.%' + filters.search + '%')
+
+    if (filters.tipo)       q = q.ilike('tipo','%' + filters.tipo + '%')
+    if (filters.mes)        q = q.gte('fecha', filters.mes + '-01').lte('fecha', filters.mes + '-31')
+    if (filters.search)     q = q.or('nombre.ilike.%' + filters.search + '%,dni.eq.' + filters.search + ',pv_solicitud.ilike.%' + filters.search + '%')
     if (filters.campana_id === '__con__') q = q.not('campana_id','is',null)
+
+    // FIX: origen y sub_origen filtran directo en mkt_ventas (columnas lead_origen / lead_sub_origen)
+    // No se necesita client-side filter ni pre-fetch de lead IDs para estos
+    if (filters.origen)     q = q.eq('lead_origen',     filters.origen)
+    if (filters.sub_origen) q = q.eq('lead_sub_origen', filters.sub_origen)
 
     if (leadIdsFiltro !== null) {
       if (leadIdsFiltro.length > 0) q = q.in('lead_id', leadIdsFiltro)
@@ -185,7 +180,6 @@ export default function Asignados() {
     log('Cargando leads...')
     let allLeads = []; let from = 0
     while (true) {
-      // CAMBIO: se agrega sub_origen al select de leads para el cruce
       const { data: batch } = await supabase.from('mkt_leads')
         .select('id,dni,telefono,celular,campana_id,codigo_campana,nro_tramite,job_seq,origen,sub_origen')
         .range(from, from+999)
@@ -199,7 +193,7 @@ export default function Asignados() {
     let allVentas = []; from = 0
     while (true) {
       const { data: batch } = await supabase.from('mkt_ventas')
-        .select('id,dni,telefono_personal,celular_personal,proceso')
+        .select('id,dni,telefono_personal,celular_personal,proceso,metodo_match')
         .range(from, from+999)
       if (!batch || batch.length === 0) break
       allVentas = allVentas.concat(batch)
@@ -218,36 +212,38 @@ export default function Asignados() {
     }
     log('Índices - DNI: ' + byDNI.size + ' | Tel: ' + byPhone.size + ' | JOB_SEQ: ' + byJobSeq.size)
     log('Ejecutando cruce...')
-    const updates = []; let mP = 0, mD = 0, mT = 0, sinM = 0
+    const updates = []; let mP = 0, mD = 0, mT = 0, sinM = 0, protegidas = 0
     for (const v of allVentas) {
+      // Respetar vínculos hechos a mano — no pisarlos
+      if (v.metodo_match === 'manual') { protegidas++; continue }
       const vP = v.proceso ? String(v.proceso).trim() : null
       const vD = normDNI(v.dni)
       const vPhones = [normPhone(v.telefono_personal), normPhone(v.celular_personal)].filter(Boolean)
       let lead = null; let metodo = null
-      if (vP && byJobSeq.has(vP))       { lead = byJobSeq.get(vP); metodo = 'proceso';   mP++ }
-      if (!lead && vD && byDNI.has(vD)) { lead = byDNI.get(vD);    metodo = 'dni';       mD++ }
-      if (!lead) { for (const p of vPhones) if (byPhone.has(p)) { lead = byPhone.get(p); metodo = 'telefono'; mT++; break } }
+      if (vP && byJobSeq.has(vP))        { lead = byJobSeq.get(vP); metodo = 'proceso';   mP++ }
+      if (!lead && vD && byDNI.has(vD))  { lead = byDNI.get(vD);    metodo = 'dni';       mD++ }
+      if (!lead) { for (const p of vPhones) if (byPhone.has(p)) { lead = byPhone.get(p);  metodo = 'telefono'; mT++; break } }
       if (!lead) sinM++
-      // CAMBIO: se agrega sub_origen al update
       updates.push({
-        id:           v.id,
-        lead_id:      lead ? lead.id        : null,
-        campana_id:   lead ? lead.campana_id : null,
-        metodo_match: metodo,
-        lead_origen:  lead ? lead.origen    : null,
-        sub_origen:   lead ? lead.sub_origen : null,
+        id:              v.id,
+        lead_id:         lead ? lead.id          : null,
+        campana_id:      lead ? lead.campana_id  : null,
+        metodo_match:    metodo,
+        lead_origen:     lead ? lead.origen      : null,
+        lead_sub_origen: lead ? lead.sub_origen  : null,
       })
     }
-    log('Matches - JOB_SEQ: ' + mP + ' | DNI: ' + mD + ' | Tel: ' + mT + ' | Sin match: ' + sinM)
+    log('Vínculos manuales respetados: ' + protegidas)
+    log('Matches — JOB_SEQ: ' + mP + ' | DNI: ' + mD + ' | Tel: ' + mT + ' | Sin match: ' + sinM)
     log('Guardando...')
     for (let i = 0; i < updates.length; i += 100) {
       const batch = updates.slice(i, i+100)
       await Promise.all(batch.map(u => supabase.from('mkt_ventas').update({
-        lead_id:      u.lead_id,
-        campana_id:   u.campana_id,
-        metodo_match: u.metodo_match,
-        lead_origen:  u.lead_origen,
-        sub_origen:   u.sub_origen,   // NUEVO
+        lead_id:         u.lead_id,
+        campana_id:      u.campana_id,
+        metodo_match:    u.metodo_match,
+        lead_origen:     u.lead_origen,
+        lead_sub_origen: u.lead_sub_origen,
       }).eq('id', u.id)))
     }
     log('Cruce completado. ' + updates.length + ' preventas actualizadas.')
@@ -262,8 +258,7 @@ export default function Asignados() {
       await supabase.from('mkt_ventas').update({ metodo_match: value || null }).eq('id', id)
     } else if (field === 'campana_id') {
       await supabase.from('mkt_ventas').update({ campana_id: value || null }).eq('id', id)
-    } else if (['canal', 'codigo_campana', 'sub_origen'].includes(field) && leadId) {
-      // CAMBIO: sub_origen también es editable en mkt_leads
+    } else if ((field === 'canal' || field === 'codigo_campana') && leadId) {
       await supabase.from('mkt_leads').update({ [field]: value || null }).eq('id', leadId)
     }
     setEditing(null); setSaving(false); loadData()
@@ -273,8 +268,7 @@ export default function Asignados() {
   const pctDigital = safePct(stats ? stats.digital : 0, stats ? stats.totalV : 0)
 
   return (
-    // CAMBIO: minWidth:0 permite que el contenido se encoja en pantalla dividida
-    <div className="space-y-5" style={{ minWidth: 0 }}>
+    <div className="space-y-5">
 
       <div className="card">
         <div className="flex items-start justify-between mb-4">
@@ -365,9 +359,7 @@ export default function Asignados() {
             <option>USADO</option>
             <option>PLAN AHORRO</option>
           </select>
-          <div className="filter-sep"/>
-          {/* Origen — server-side via pre-fetch de lead IDs */}
-          <select className="input-dark" style={{ width: 170 }} value={filters.origen} onChange={e => sf('origen', e.target.value)}>
+          <select className="input-dark" style={{ width: 190 }} value={filters.origen} onChange={e => sf('origen', e.target.value)}>
             <option value="">Origen: todos</option>
             <option value="Internet">Internet</option>
             <option value="De paso">De paso</option>
@@ -375,14 +367,13 @@ export default function Asignados() {
             <option value="Evento">Evento</option>
             <option value="WhatsApp">WhatsApp</option>
             <option value="Mercado Libre">Mercado Libre</option>
-            {origenes
-              .filter(o => !['Internet','De paso','Llamadas entrantes','Evento','WhatsApp','Mercado Libre'].includes(o))
-              .map(o => <option key={o} value={o}>{o}</option>)}
+            {origenes.filter(o => !['Internet','De paso','Llamadas entrantes','Evento','WhatsApp','Mercado Libre'].includes(o)).map(o => (
+              <option key={o} value={o}>{o}</option>
+            ))}
           </select>
-          {/* NUEVO: Sub-origen — server-side */}
-          <select className="input-dark" style={{ width: 170 }} value={filters.sub_origen} onChange={e => sf('sub_origen', e.target.value)}>
+          <select className="input-dark" style={{ width: 190 }} value={filters.sub_origen} onChange={e => sf('sub_origen', e.target.value)}>
             <option value="">Sub-origen: todos</option>
-            {subOrigenes.map(s => <option key={s} value={s}>{s}</option>)}
+            {subOrigenes.map(o => <option key={o} value={o}>{o}</option>)}
           </select>
           <div className="filter-sep"/>
           {/* Canal — multi-select */}
@@ -396,23 +387,19 @@ export default function Asignados() {
           {(filters.canales||[]).map(c => (
             <span key={c} className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-lg flex-shrink-0"
               style={{ background:'#1a2e00', color:'#B5E000', border:'1px solid rgba(181,224,0,0.2)' }}>
-              {c}
-              <button onClick={() => sf('canales',(filters.canales||[]).filter(x=>x!==c))} style={{ color:'#6b7280' }}>✕</button>
+              {c} <button onClick={() => sf('canales',(filters.canales||[]).filter(x=>x!==c))} style={{ color:'#6b7280' }}>✕</button>
             </span>
           ))}
           <div className="filter-sep"/>
-          <button
-            onClick={() => { setFilters({ search:'', tipo:'', campana_codigo:'', campana_id:'', mes:'', origen:'', sub_origen:'', canales:[] }); setPage(0) }}
-            className="btn-ghost text-xs flex-shrink-0">
-            Limpiar
-          </button>
+          <button onClick={() => { setFilters({ search:'', tipo:'', campana_codigo:'', campana_id:'', mes:'', origen:'', sub_origen:'', canales:[] }); setPage(0) }}
+            className="btn-ghost text-xs flex-shrink-0">Limpiar</button>
         </div>
 
         <div className="filter-results">
           Mostrando <span>{data.length}</span> registros
-          {filters.mes && <span> — Mes: <span>{new Date(filters.mes+'-15').toLocaleString('es-AR',{month:'long',year:'numeric'})}</span></span>}
-          {filters.tipo && <span> — Tipo: <span>{filters.tipo}</span></span>}
-          {filters.origen && <span> — Origen: <span>{filters.origen}</span></span>}
+          {filters.mes       && <span> — Mes: <span>{new Date(filters.mes+'-15').toLocaleString('es-AR',{month:'long',year:'numeric'})}</span></span>}
+          {filters.tipo      && <span> — Tipo: <span>{filters.tipo}</span></span>}
+          {filters.origen    && <span> — Origen: <span>{filters.origen}</span></span>}
           {filters.sub_origen && <span> — Sub-origen: <span>{filters.sub_origen}</span></span>}
         </div>
 
@@ -431,9 +418,8 @@ export default function Asignados() {
           </div>
         )}
 
-        {/* CAMBIO: minWidth fijo para que el scroll interno funcione en pantalla dividida */}
         <div className="overflow-x-auto rounded-lg border" style={{ borderColor:'#2a2a2a' }}>
-          <table className="dark-table" style={{ minWidth: tab === 'digital' ? 1060 : 700 }}>
+          <table className="dark-table" style={{ minWidth: tab === 'digital' ? 1060 : 720 }}>
             <thead>
               <tr>
                 <th>PV</th>
@@ -441,12 +427,13 @@ export default function Asignados() {
                 <th>Tipo</th>
                 <th>Cliente</th>
                 <th>DNI</th>
+                <th>Contacto</th>
                 <th>Vendedor</th>
                 <th>Marca</th>
                 {tab === 'digital' && (
                   <>
                     <th>Origen</th>
-                    <th>Sub-origen</th>   {/* NUEVO */}
+                    <th>Sub-origen</th>
                     <th>Canal</th>
                     <th>Campaña</th>
                     <th>Match</th>
@@ -465,16 +452,13 @@ export default function Asignados() {
                 </td></tr>
               )}
               {data
-                // CAMBIO: De paso solo se oculta en digital si NO hay filtro de origen activo
+                // Solo excluir "De paso" del tab digital cuando no hay filtro de origen activo
                 .filter(v => {
                   if (tab === 'digital' && !filters.origen && v.lead_origen === 'De paso') return false
                   return true
                 })
                 .map(v => {
                   const lead = v.mkt_leads
-                  // Sub-origen: primero del lead, fallback al guardado en mkt_ventas por el cruce
-                  const displaySubOrigen = lead?.sub_origen || v.sub_origen
-
                   return (
                     <tr key={v.id}>
                       <td className="font-mono text-xs" style={{ color: BRAND, whiteSpace:'nowrap' }}>{v.pv_solicitud || '-'}</td>
@@ -482,6 +466,10 @@ export default function Asignados() {
                       <td>{v.tipo ? <span className="badge badge-blue" style={{fontSize:'0.6rem'}}>{v.tipo}</span> : '-'}</td>
                       <td className="font-medium text-white text-xs">{v.nombre || '-'}</td>
                       <td className="font-mono text-xs text-gray-400">{v.dni || '-'}</td>
+                      <td className="text-xs text-gray-400" style={{ maxWidth:180 }}>
+                        <div className="whitespace-nowrap">{v.celular_personal || v.telefono_personal || '-'}</div>
+                        {v.email && <div className="truncate" title={v.email}>{v.email}</div>}
+                      </td>
                       <td className="text-gray-400 text-xs">{v.vendedor || '-'}</td>
                       <td>{v.marca ? <span className="badge badge-gray" style={{fontSize:'0.6rem'}}>{v.marca}</span> : '-'}</td>
 
@@ -494,38 +482,19 @@ export default function Asignados() {
                               : <span className="text-gray-600">-</span>}
                           </td>
 
-                          {/* NUEVO: Sub-origen — editable en mkt_leads */}
-                          <td
-                            onClick={() => !editing && setEditing({
-                              id: v.id, field: 'sub_origen',
-                              value: displaySubOrigen || '',
-                              leadId: lead ? lead.id : null
-                            })}>
-                            {editing && editing.id === v.id && editing.field === 'sub_origen' ? (
-                              <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
-                                <input autoFocus className="input-dark text-xs"
-                                  style={{ width: 110, padding: '2px 6px', height: 24 }}
-                                  value={editing.value}
-                                  onChange={e => setEditing(p => ({ ...p, value: e.target.value }))}
-                                  onKeyDown={e => { if (e.key === 'Enter') saveEdit(); if (e.key === 'Escape') setEditing(null) }} />
-                                <button onClick={saveEdit} disabled={saving} style={{ color: BRAND, fontSize: 11 }}>{saving ? '...' : 'ok'}</button>
-                                <button onClick={() => setEditing(null)} className="text-gray-600 text-xs">x</button>
-                              </div>
-                            ) : (
-                              <div className="cursor-pointer">
-                                {displaySubOrigen
-                                  ? <span className="badge badge-green" style={{fontSize:'0.6rem'}}>{displaySubOrigen}</span>
-                                  : <span className="text-gray-600 text-xs">— ed</span>}
-                              </div>
+                          {/* Sub-origen — fuente: lead.sub_origen, fallback a lead_sub_origen en venta */}
+                          <td className="text-xs whitespace-nowrap">
+                            <div className="text-gray-300">
+                              {(lead?.sub_origen) || v.lead_sub_origen || <span className="text-gray-600">-</span>}
+                            </div>
+                            {lead?.link_anuncio && (
+                              <a href={lead.link_anuncio} target="_blank" rel="noopener noreferrer"
+                                style={{ color: BRAND, textDecoration:'underline' }}>Ver anuncio ↗</a>
                             )}
                           </td>
 
-                          {/* Canal */}
-                          <td onClick={() => !editing && setEditing({
-                            id: v.id, field: 'canal',
-                            value: lead?.canal || '',
-                            leadId: lead ? lead.id : null
-                          })}>
+                          {/* Canal — editable */}
+                          <td onClick={() => !editing && setEditing({ id: v.id, field: 'canal', value: lead?.canal || '', leadId: lead ? lead.id : null })}>
                             {editing && editing.id === v.id && editing.field === 'canal' ? (
                               <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
                                 <input autoFocus className="input-dark text-xs"
@@ -540,43 +509,41 @@ export default function Asignados() {
                               <div className="cursor-pointer">
                                 {lead?.canal
                                   ? <span className="badge badge-blue" style={{fontSize:'0.6rem'}}>{lead.canal}</span>
-                                  : <span className="text-gray-600 text-xs">— ed</span>}
+                                  : <span className="text-gray-600 text-xs">- ed</span>}
                               </div>
                             )}
                           </td>
 
-                          {/* Campaña */}
+                          {/* Campaña — editable */}
                           <td>
-                            <div className="flex flex-col gap-0.5">
-                              <div className="cursor-pointer"
-                                onClick={() => !editing && setEditing({ id: v.id, field: 'campana_id', value: v.campana_id || '', leadId: null })}>
-                                {editing && editing.id === v.id && editing.field === 'campana_id' ? (
-                                  <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
-                                    <select autoFocus className="input-dark text-xs"
-                                      style={{ width: 130, padding: '2px 4px', height: 22 }}
-                                      value={editing.value}
-                                      onChange={e => setEditing(p => ({ ...p, value: e.target.value }))}>
-                                      <option value="">Sin campaña</option>
-                                      {campanas.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
-                                    </select>
-                                    <button onClick={saveEdit} disabled={saving} style={{ color: BRAND, fontSize: 10 }}>{saving ? '...' : 'ok'}</button>
-                                    <button onClick={() => setEditing(null)} className="text-gray-600 text-xs">x</button>
-                                  </div>
-                                ) : (() => {
-                                  if (v.mkt_campanas) {
-                                    return <span className="text-xs font-medium text-white">{v.mkt_campanas.nombre}</span>
-                                  }
-                                  if (lead?.codigo_campana) {
-                                    const c = campanas.find(x => x.codigo && x.codigo.toLowerCase() === lead.codigo_campana.toLowerCase())
-                                    return <span className="text-xs" style={{ color:'#9ca3af' }}>{c ? c.nombre : `[${lead.codigo_campana}]`}</span>
-                                  }
-                                  return <span className="text-xs" style={{ color:'#374151' }}>—</span>
-                                })()}
-                              </div>
+                            <div className="cursor-pointer"
+                              onClick={() => !editing && setEditing({ id: v.id, field: 'campana_id', value: v.campana_id || '', leadId: null })}>
+                              {editing && editing.id === v.id && editing.field === 'campana_id' ? (
+                                <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
+                                  <select autoFocus className="input-dark text-xs"
+                                    style={{ width: 130, padding: '2px 4px', height: 22 }}
+                                    value={editing.value}
+                                    onChange={e => setEditing(p => ({ ...p, value: e.target.value }))}>
+                                    <option value="">Sin campaña</option>
+                                    {campanas.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+                                  </select>
+                                  <button onClick={saveEdit} disabled={saving} style={{ color: BRAND, fontSize: 10 }}>{saving ? '...' : 'ok'}</button>
+                                  <button onClick={() => setEditing(null)} className="text-gray-600 text-xs">x</button>
+                                </div>
+                              ) : (() => {
+                                if (v.mkt_campanas) {
+                                  return <span className="text-xs font-medium text-white">{v.mkt_campanas.nombre}</span>
+                                }
+                                if (lead?.codigo_campana) {
+                                  const c = campanas.find(x => x.codigo && x.codigo.toLowerCase() === lead.codigo_campana.toLowerCase())
+                                  return <span className="text-xs" style={{ color:'#9ca3af' }}>{c ? c.nombre : `[${lead.codigo_campana}]`}</span>
+                                }
+                                return <span className="text-xs" style={{ color:'#374151' }}>—</span>
+                              })()}
                             </div>
                           </td>
 
-                          {/* Match */}
+                          {/* Match — editable */}
                           <td onClick={() => !editing && setEditing({ id: v.id, field: 'metodo_match', value: v.metodo_match || '', leadId: null })}>
                             {editing && editing.id === v.id && editing.field === 'metodo_match' ? (
                               <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
