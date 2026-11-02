@@ -190,7 +190,7 @@ export default function Asignados() {
     let allLeads = []; let from = 0
     while (true) {
       const { data: batch } = await supabase.from('mkt_leads')
-        .select('id,dni,telefono,celular,campana_id,codigo_campana,nro_tramite,job_seq,origen,sub_origen')
+        .select('id,dni,telefono,celular,email,campana_id,codigo_campana,nro_tramite,origen,sub_origen')
         .range(from, from+999)
       if (!batch || batch.length === 0) break
       allLeads = allLeads.concat(batch)
@@ -202,7 +202,7 @@ export default function Asignados() {
     let allVentas = []; from = 0
     while (true) {
       const { data: batch } = await supabase.from('mkt_ventas')
-        .select('id,dni,telefono_personal,celular_personal,proceso,metodo_match')
+        .select('id,dni,telefono_personal,celular_personal,email,metodo_match')
         .range(from, from+999)
       if (!batch || batch.length === 0) break
       allVentas = allVentas.concat(batch)
@@ -211,27 +211,28 @@ export default function Asignados() {
     }
     log('Preventas cargadas: ' + allVentas.length)
     log('Construyendo índices...')
-    const byDNI = new Map(); const byPhone = new Map(); const byJobSeq = new Map()
+    const byDNI = new Map(); const byPhone = new Map(); const byEmail = new Map()
     for (const lead of allLeads) {
       const dni = normDNI(lead.dni)
       const phones = [normPhone(lead.telefono), normPhone(lead.celular)].filter(Boolean)
-      if (dni) byDNI.set(dni, lead)
+      const email = lead.email ? lead.email.trim().toLowerCase() : null
+      if (dni)   byDNI.set(dni, lead)
       for (const p of phones) { byPhone.set(p, lead) }
-      if (lead.job_seq) byJobSeq.set(String(lead.job_seq), lead)
+      if (email) byEmail.set(email, lead)
     }
-    log('Índices - DNI: ' + byDNI.size + ' | Tel: ' + byPhone.size + ' | JOB_SEQ: ' + byJobSeq.size)
+    log('Índices - DNI: ' + byDNI.size + ' | Tel: ' + byPhone.size + ' | Email: ' + byEmail.size)
     log('Ejecutando cruce...')
-    const updates = []; let mP = 0, mD = 0, mT = 0, sinM = 0, protegidas = 0
+    const updates = []; let mD = 0, mT = 0, mE = 0, sinM = 0, protegidas = 0
     for (const v of allVentas) {
       // Respetar vínculos hechos a mano — no pisarlos
       if (v.metodo_match === 'manual') { protegidas++; continue }
-      const vP = v.proceso ? String(v.proceso).trim() : null
-      const vD = normDNI(v.dni)
+      const vD      = normDNI(v.dni)
       const vPhones = [normPhone(v.telefono_personal), normPhone(v.celular_personal)].filter(Boolean)
+      const vEmail  = v.email ? v.email.trim().toLowerCase() : null
       let lead = null; let metodo = null
-      if (vP && byJobSeq.has(vP))        { lead = byJobSeq.get(vP); metodo = 'proceso';   mP++ }
-      if (!lead && vD && byDNI.has(vD))  { lead = byDNI.get(vD);    metodo = 'dni';       mD++ }
-      if (!lead) { for (const p of vPhones) if (byPhone.has(p)) { lead = byPhone.get(p);  metodo = 'telefono'; mT++; break } }
+      if (!lead && vD     && byDNI.has(vD))    { lead = byDNI.get(vD);    metodo = 'dni';      mD++ }
+      if (!lead) { for (const p of vPhones) if (byPhone.has(p)) { lead = byPhone.get(p); metodo = 'telefono'; mT++; break } }
+      if (!lead && vEmail && byEmail.has(vEmail)) { lead = byEmail.get(vEmail); metodo = 'email'; mE++ }
       if (!lead) sinM++
       updates.push({
         id:              v.id,
@@ -243,7 +244,7 @@ export default function Asignados() {
       })
     }
     log('Vínculos manuales respetados: ' + protegidas)
-    log('Matches — JOB_SEQ: ' + mP + ' | DNI: ' + mD + ' | Tel: ' + mT + ' | Sin match: ' + sinM)
+    log('Matches — DNI: ' + mD + ' | Teléfono: ' + mT + ' | Email: ' + mE + ' | Sin match: ' + sinM)
     log('Guardando...')
     for (let i = 0; i < updates.length; i += 100) {
       const batch = updates.slice(i, i+100)
