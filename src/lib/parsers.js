@@ -32,7 +32,7 @@ function normalizeDate(val) {
   if (iso) return `${iso[1]}-${iso[2]}-${iso[3]}`
   const garbled = s.match(/(\d{4}).*?(\d{2})-(\d{2})$/)
   if (garbled) return `${garbled[1]}-${garbled[2]}-${garbled[3]}`
-  const slash = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/)
+  const slash = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})(?:[ T].*)?$/)
   if (slash) {
     const [, d, m, y] = slash
     return `${y.length===2?'20'+y:y}-${m.padStart(2,'0')}-${d.padStart(2,'0')}`
@@ -55,32 +55,53 @@ function normalizeDNI(val) {
   return d
 }
 
+// ── helpers ───────────────────────────────────────────────────────────────────
+function cleanUrl(val) {
+  const s = String(val||'').trim()
+  if (!s || s === '0') return null
+  if (/^https?:\/\//i.test(s)) return s
+  if (/^www\./i.test(s)) return 'https://' + s
+  return s
+}
+const clean = v => { const s = String(v==null?'':v).trim(); return s && s !== '0' ? s : null }
+
 // ── normalizeFacilitadoresRow ─────────────────────────────────────────────────
+// Columnas Celer: E Apellido, F Nombre, G Email, H TELCODAREA, I TELNUMERO,
+// J Consulta, Q DNI, AB url (link al anuncio / página de origen)
 export function normalizeFacilitadoresRow(row) {
   const pv = row['ID'] ? String(row['ID']) : null
   if (!pv) return null
-  const telefono = row['TELNUMERO'] ? String(row['TELNUMERO']||'').replace(/\D/g,'') || null : null
-  const codArea  = row['TELCODAREA'] ? String(row['TELCODAREA']||'').replace(/\D/g,'') : ''
-  const telFull  = codArea && telefono ? codArea+telefono : telefono
+  const num  = String(row['TELNUMERO']||'').replace(/\D/g,'')
+  const area = String(row['TELCODAREA']||'').replace(/\D/g,'')
+  // TELNUMERO a veces ya viene completo (+54...) → no anteponer el código de área
+  const telFull = !num ? null : (num.length >= 10 || !area ? num : area + num)
   const origen = (() => {
     const ws = String(row['websiteName']||'').toLowerCase()
     if (ws.includes('mercado')) return 'Mercado Libre'
     if (ws.includes('whatsapp')||ws.includes('wpp')) return 'WhatsApp'
     return 'Internet'
   })()
+  const nombre   = clean(row['Nombre']||row['NOMBRE'])
+  let   apellido = clean(row['Apellido']||row['APELLIDO'])
+  if (apellido && nombre && apellido.toLowerCase() === nombre.toLowerCase()) apellido = null // Celer repite el nombre completo
+  const consulta = clean(row['Consulta']||row['CONSULTA'])
+  const subOrigen = /darwin/i.test(consulta||'') ? 'Darwin' : clean(row['Origen'])
   return {
     nro_tramite:    pv,
     job_seq:        row['JOB_SEQ'] ? String(row['JOB_SEQ']).trim() : null,
-    fecha_consulta: String(row['Fecha de consulta']||row['FECHA_CONSULTA']||'').slice(0,10)||null,
-    nombre:         row['Nombre']||row['NOMBRE']||null,
+    fecha_consulta: normalizeDate(row['Fecha de consulta']||row['FECHA_CONSULTA']),
+    apellido,
+    nombre,
     dni:            normalizeDNI(row['DNI']),
     telefono:       normalizePhone(telFull),
     celular:        normalizePhone(telFull),
-    email:          row['Email']||row['EMAIL']||null,
+    email:          clean(row['Email']||row['EMAIL']),
     origen,
+    sub_origen:     subOrigen,
     canal:          row['campania']||row['websiteName']||null,
     codigo_campana: (() => { const m=String(row['campania']||'').match(/\[([^\]]+)\]/); return m?m[1].toLowerCase():null })(),
-    consulta:       row['Consulta']||row['CONSULTA']||null,
+    consulta,
+    link_anuncio:   cleanUrl(row['url']||row['URL']||row['Url']),
     vendedor:       row['USUARIO_DERIVO']||null,
     fuente:         'celer',
     estado:         'nuevo',
@@ -108,7 +129,8 @@ export function normalizeDerivadoLeadRow(row) {
     celular:        normalizePhone(row['Celular']||row['CELULAR']),
     email:          row['Email']||row['EMAIL']||null,
     origen,
-    sub_origen: row['Sub Origen'] || row['sub_origen'] || row['SUB_ORIGEN'] || null,
+    sub_origen:     clean(row['Sub Origen']||row['SUB ORIGEN']),
+    campana_web:    clean(row['Campaña Web']||row['CAMPAÑA WEB']||row['Campana Web']),
     canal:          row['Origen']||row['origen']||null,
     codigo_campana: (() => { const m=String(row['Campaña']||row['CAMPAÑA']||row['campana']||'').match(/\[([^\]]+)\]/); return m?m[1].toLowerCase():null })(),
     vendedor:       row['Vendedor']||row['VENDEDOR']||null,
@@ -154,6 +176,9 @@ export function normalizePVRow(row) {
     tipo:              row['TIPO'] || null,
     nombre:            nombre || null,
     dni:               normalizeDNI(row['DNI'] || row['CUIL'] || row['CUIL CUIT'] || ''),
+    cuil_cuit:         clean(row['CUIL CUIT'] || row['CUIL']),
+    email:             clean(row['EMAIL'] || row['Email']),
+    nombre_conyuge:    clean(row['NombreConyuge'] || row['NOMBRECONYUGE'] || row['NOMBRE CONYUGE']),
     telefono_personal: tel,
     celular_personal:  cel,
     vendedor:          vendedor || null,
