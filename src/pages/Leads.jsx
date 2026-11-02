@@ -74,13 +74,13 @@ export default function Leads() {
   const loadLeads = useCallback(async () => {
     setLoading(true)
     let q = supabase.from('mkt_leads')
-      .select('id,nro_tramite,fecha_consulta,apellido,nombre,dni,telefono,email,origen,canal,codigo_campana,vendedor,fuente,campana_id,estado', { count:'exact' })
+      .select('id,nro_tramite,fecha_consulta,apellido,nombre,dni,telefono,celular,email,origen,sub_origen,canal,codigo_campana,campana_web,consulta,link_anuncio,vendedor,fuente,campana_id,estado', { count:'exact' })
       .order('fecha_consulta', { ascending: false })
       .range(page * PAGE, (page + 1) * PAGE - 1)
     if (filters.fuente)  q = q.eq('fuente', filters.fuente)
     if (filters.canal)   q = q.ilike('canal', '%' + filters.canal + '%')
     if (filters.campana) q = q.not('campana_id', 'is', null)
-    if (filters.search)  q = q.or('apellido.ilike.%' + filters.search + '%,nombre.ilike.%' + filters.search + '%,dni.eq.' + filters.search + ',telefono.eq.' + filters.search)
+    if (filters.search)  q = q.or('apellido.ilike.%' + filters.search + '%,nombre.ilike.%' + filters.search + '%,dni.eq.' + filters.search + ',telefono.eq.' + filters.search + ',email.ilike.%' + filters.search + '%,consulta.ilike.%' + filters.search + '%,sub_origen.ilike.%' + filters.search + '%')
     const { data, count } = await q
     setLeads(data || [])
     setTotal(count || 0)
@@ -187,11 +187,12 @@ export default function Leads() {
     try {
       const result = await parseFile(f)
       const rows = Array.isArray(result) ? result : (result.data || result || [])
+      const cleanNum = v => String(v).replace(/\.0$/, '').replace(/[^\d]/g, '')
       const get = (row, ...keys) => {
         for (const k of keys) {
           const found = Object.keys(row).find(rk => rk.toLowerCase().replace(/[^a-z]/g,'').includes(k))
           if (found && row[found] !== null && row[found] !== undefined) {
-            const val = String(row[found]).trim()
+            const val = String(row[found]).trim().replace(/\.0$/, '')
             if (val && val !== '0') return val
           }
         }
@@ -202,9 +203,11 @@ export default function Leads() {
         const nombreCompleto = get(row,'nombreyapellido','nombrey','fullname')
         const nombre   = nombreCompleto || get(row,'nombre','name','first')
         const apellido = nombreCompleto ? '' : get(row,'apellido','lastname','surname')
-        const telefono = get(row,'celular','telefono','phone','cel','tel','movil','whatsapp')
+        const telefonoRaw = get(row,'celular','telefono','phone','cel','tel','movil','whatsapp')
+        const telefono = telefonoRaw ? telefonoRaw.replace(/\.0$/, '').replace(/[^\d+]/g, '') : ''
         const email    = get(row,'correo','email','mail','emailaddress')
-        const dni      = get(row,'dni','cedula','documento','id')
+        const dniRaw   = get(row,'dni','cedula','documento','id')
+        const dni      = dniRaw ? dniRaw.replace(/\.0$/, '').replace(/\D/g, '') : ''
         return { nombre, apellido, telefono, email, dni }
       }).filter(r => r.nombre || r.apellido || r.telefono || r.email)
       setExcelPreview(preview)
@@ -253,8 +256,8 @@ export default function Leads() {
         {showFmt && (
           <div className="grid grid-cols-2 gap-3 mb-4">
             {[
-              { title:'Facilitadores', cols:['Fecha de consulta','ID','JOB_SEQ','Apellido','Nombre','DNI','TELNUMERO','TELCODAREA','Email','Consulta','USUARIO_DERIVO','campania'], key:['ID','JOB_SEQ','DNI','TELNUMERO'] },
-              { title:'Derivado', cols:['Nro Tramite','Fecha de Consulta','Cliente','DNI','Telefono','Celular','Email','Vendedor','Origen','Sub Origen','Campaña','Estado Tramite'], key:['Nro Tramite','DNI','Telefono','Celular'] }
+              { title:'Facilitadores', cols:['Fecha de consulta','ID','JOB_SEQ','Apellido','Nombre','DNI','TELNUMERO','TELCODAREA','Email','Consulta','USUARIO_DERIVO','campania','url'], key:['ID','JOB_SEQ','DNI','TELNUMERO'] },
+              { title:'Derivado', cols:['Nro Tramite','Fecha de Consulta','Cliente','DNI','Telefono','Celular','Email','Vendedor','Origen','Sub Origen','Campaña','Campaña Web','Estado Tramite'], key:['Nro Tramite','DNI','Telefono','Celular'] }
             ].map(({ title, cols, key }) => (
               <div key={title} className="rounded-lg border overflow-hidden" style={{ borderColor:'#2a2a2a' }}>
                 <div className="px-3 py-2 text-xs font-bold text-gray-400 uppercase" style={{ background:'#0a0a0a' }}>{title}</div>
@@ -513,13 +516,13 @@ export default function Leads() {
             <thead>
               <tr>
                 <th>Fecha</th><th>Cliente</th><th>DNI</th><th>Teléfono</th>
-                <th>Email</th><th>Canal</th><th>Campaña</th><th>Asesor</th><th>Fuente</th>
+                <th>Email</th><th>Origen</th><th>Sub-origen</th><th>Canal</th><th>Campaña</th><th>Consulta</th><th>Anuncio</th><th>Asesor</th><th>Fuente</th>
               </tr>
             </thead>
             <tbody>
-              {loading && <tr><td colSpan={9} className="text-center py-8 text-gray-600">Cargando...</td></tr>}
+              {loading && <tr><td colSpan={13} className="text-center py-8 text-gray-600">Cargando...</td></tr>}
               {!loading && leads.length === 0 && (
-                <tr><td colSpan={9} className="text-center py-10 text-gray-600">Sin leads. Subí los reportes arriba.</td></tr>
+                <tr><td colSpan={13} className="text-center py-10 text-gray-600">Sin leads. Subí los reportes arriba.</td></tr>
               )}
               {leads.map(l => (
                 <tr key={l.id}>
@@ -532,10 +535,21 @@ export default function Leads() {
                   <td className="font-mono text-xs text-gray-400">{l.dni || '—'}</td>
                   <td className="font-mono text-xs text-gray-400">{l.telefono || '—'}</td>
                   <td className="text-xs text-gray-400 max-w-xs truncate">{l.email || '—'}</td>
+                  <td className="text-xs text-gray-400 whitespace-nowrap">{l.origen || '—'}</td>
+                  <td className="text-xs text-gray-300 whitespace-nowrap">{l.sub_origen || '—'}</td>
                   <td>{l.canal ? <span className="badge badge-blue">{l.canal}</span> : <span className="text-gray-600">—</span>}</td>
                   <td>
                     {l.codigo_campana
                       ? <span className={'badge ' + (l.campana_id ? 'badge-green' : 'badge-yellow')}>[{l.codigo_campana}]</span>
+                      : <span className="text-gray-600">—</span>}
+                    {l.campana_web && <div className="text-xs text-gray-500 mt-0.5">{l.campana_web}</div>}
+                  </td>
+                  <td className="text-xs text-gray-400" style={{ maxWidth: 260 }}>
+                    {l.consulta ? <div className="truncate" title={l.consulta}>{l.consulta}</div> : '—'}
+                  </td>
+                  <td className="text-xs whitespace-nowrap">
+                    {l.link_anuncio
+                      ? <a href={l.link_anuncio} target="_blank" rel="noopener noreferrer" style={{ color:'#B5E000', textDecoration:'underline' }}>Ver anuncio ↗</a>
                       : <span className="text-gray-600">—</span>}
                   </td>
                   <td className="text-gray-400 text-xs">{l.vendedor || '—'}</td>
