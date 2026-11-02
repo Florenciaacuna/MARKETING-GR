@@ -7,12 +7,21 @@ const PAGE  = 50
 
 function normPhone(p) {
   if (!p) return null
-  const raw = String(p)
-  let d = raw.replace(/\D/g, '')
+  let d = String(p).replace(/\D/g, '')
   if (!d) return null
+  // Quitar código de país 54
   if (d.startsWith('54') && d.length > 10) d = d.slice(2)
+  // Quitar prefijo móvil internacional 9
   if (d.startsWith('9')  && d.length > 10) d = d.slice(1)
+  // Quitar troncal 0
   if (d.startsWith('0'))                   d = d.slice(1)
+  // Quitar "15" del formato argentino local: CCCC15XXXXXXX (12 dígitos)
+  // Soporta códigos de área de 2, 3 o 4 dígitos (ej: 11, 221, 2954)
+  if (d.length === 12) {
+    if      (d.slice(2, 4) === '15') d = d.slice(0, 2) + d.slice(4) // 11-15-XXXXXXXX
+    else if (d.slice(3, 5) === '15') d = d.slice(0, 3) + d.slice(5) // 221-15-XXXXXXX
+    else if (d.slice(4, 6) === '15') d = d.slice(0, 4) + d.slice(6) // 2954-15-XXXXXX
+  }
   const l = d.slice(-10)
   return l.length >= 8 ? l : null
 }
