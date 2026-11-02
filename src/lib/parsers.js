@@ -108,7 +108,7 @@ export function normalizeDerivadoLeadRow(row) {
     celular:        normalizePhone(row['Celular']||row['CELULAR']),
     email:          row['Email']||row['EMAIL']||null,
     origen,
-    sub_origen:     row['Sub Origen']||row['SUB ORIGEN']||null,
+    sub_origen: row['Sub Origen'] || row['sub_origen'] || row['SUB_ORIGEN'] || null,
     canal:          row['Origen']||row['origen']||null,
     codigo_campana: (() => { const m=String(row['Campaña']||row['CAMPAÑA']||row['campana']||'').match(/\[([^\]]+)\]/); return m?m[1].toLowerCase():null })(),
     vendedor:       row['Vendedor']||row['VENDEDOR']||null,
