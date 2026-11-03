@@ -73,8 +73,8 @@ export function useDashboard() {
         if (campanaFiltro)      q = q.eq('campana_id', campanaFiltro)
         return q.then(r=>r.data||[])
       })(),
-      fetchAll('mkt_leads','canal,origen',null, campanaFiltro ? [q=>q.eq('campana_id',campanaFiltro)] : [])
-    ])
+     supabase.rpc('get_leads_origen_stats', campanaFiltro ? { p_campana_id: campanaFiltro } : {})
+// → 1 sola llamada, resultado pre-agrupado
 
     // Por marca
     const mMap = {}
