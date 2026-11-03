@@ -63,8 +63,15 @@ export function useDashboard() {
       })(),
 
       // ← reemplaza fetchAll de 40k filas: una sola llamada al RPC
+      // Si el RPC no fue creado aún en Supabase, devuelve [] sin romper la carga
       supabase.rpc('get_leads_origen_stats', campanaFiltro ? { p_campana_id: campanaFiltro } : {})
-        .then(r => r.data || []),
+        .then(r => {
+          if (r.error) {
+            console.warn('[Dashboard] RPC get_leads_origen_stats no disponible:', r.error.message)
+            return []
+          }
+          return r.data || []
+        }),
     ])
 
     // Por marca
