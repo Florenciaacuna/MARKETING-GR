@@ -13,16 +13,33 @@ const BRAND = '#B5E000'
 const DARK  = '#0a0a0a'
 
 const NAV = [
-  { id: 'dashboard', label: 'Dashboard', icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg> },
-  { id: 'leads',     label: 'Leads',     icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg> },
-  { id: 'ventas',    label: 'Preventas',    icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg> },
-  { id: 'asignados', label: 'Asignados', icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg> },
-  { id: 'campanas',  label: 'Campañas',  icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg> },
+  { id: 'dashboard', label: 'Dashboard', icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4 flex-shrink-0"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg> },
+  { id: 'leads',     label: 'Leads',     icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4 flex-shrink-0"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg> },
+  { id: 'ventas',    label: 'Preventas', icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4 flex-shrink-0"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg> },
+  { id: 'asignados', label: 'Asignados', icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4 flex-shrink-0"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg> },
+  { id: 'campanas',  label: 'Campañas',  icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4 flex-shrink-0"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg> },
 ]
 
+// Ícono hamburguesa / flecha
+function IconToggle({ open }) {
+  return open
+    ? <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4"><polyline points="15 18 9 12 15 6"/></svg>
+    : <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4"><polyline points="9 18 15 12 9 6"/></svg>
+}
+
 export default function App() {
-  const [session, setSession] = useState(undefined)
-  const [tab,     setTab]     = useState('dashboard')
+  const [session,   setSession]   = useState(undefined)
+  const [tab,       setTab]       = useState('dashboard')
+  const [sideOpen,  setSideOpen]  = useState(() => {
+    try { return localStorage.getItem('gr_sidebar') !== 'closed' } catch { return true }
+  })
+
+  const toggleSide = () => setSideOpen(v => {
+    const next = !v
+    try { localStorage.setItem('gr_sidebar', next ? 'open' : 'closed') } catch {}
+    return next
+  })
+
   const isReset = window.location.hash.includes('access_token')
 
   useEffect(() => {
@@ -51,65 +68,112 @@ export default function App() {
     <div className="flex h-screen overflow-hidden" style={{ background: '#0f0f0f' }}>
 
       {/* SIDEBAR */}
-      <aside className="w-52 flex-shrink-0 flex flex-col border-r" style={{ background: DARK, borderColor: '#1f1f1f' }}>
-
-        {/* Logo */}
-        <div className="px-3 py-3 border-b" style={{ borderColor: '#1f1f1f' }}>
-          <img src="/logo-randazzo.png" alt="Grupo Randazzo" style={{ width:'100%', maxWidth:160, display:'block', margin:'0 auto' }} />
-          <div style={{ marginTop:6, textAlign:'center' }}>
-            <span style={{ fontSize:'9px', fontWeight:700, letterSpacing:'0.18em', color:'rgba(181,224,0,0.6)', textTransform:'uppercase' }}>Marketing</span>
-          </div>
+      <aside
+        className="flex-shrink-0 flex flex-col border-r transition-all duration-200"
+        style={{
+          background: DARK,
+          borderColor: '#1f1f1f',
+          width: sideOpen ? 208 : 56,
+          minWidth: sideOpen ? 208 : 56,
+        }}
+      >
+        {/* Logo + toggle */}
+        <div className="border-b flex items-center justify-between px-2 py-3" style={{ borderColor: '#1f1f1f' }}>
+          {sideOpen && (
+            <div style={{ flex: 1, paddingLeft: 4 }}>
+              <img src="/logo-randazzo.png" alt="Grupo Randazzo"
+                style={{ width: '100%', maxWidth: 148, display: 'block' }} />
+              <div style={{ marginTop: 4 }}>
+                <span style={{ fontSize: '9px', fontWeight: 700, letterSpacing: '0.18em', color: 'rgba(181,224,0,0.6)', textTransform: 'uppercase' }}>
+                  Marketing
+                </span>
+              </div>
+            </div>
+          )}
+          <button
+            onClick={toggleSide}
+            title={sideOpen ? 'Colapsar menú' : 'Expandir menú'}
+            className="flex items-center justify-center rounded-lg transition-colors hover:bg-white/5 text-gray-500 hover:text-white flex-shrink-0"
+            style={{ width: 32, height: 32 }}>
+            <IconToggle open={sideOpen} />
+          </button>
         </div>
 
         {/* Conectado */}
-        <div className="px-4 py-2.5 border-b" style={{ borderColor: '#1f1f1f' }}>
-          <div className="flex items-center gap-2">
-            <div className="w-1.5 h-1.5 rounded-full bg-green-400"></div>
-            <span className="text-xs text-gray-500">Conectado</span>
+        {sideOpen && (
+          <div className="px-4 py-2.5 border-b" style={{ borderColor: '#1f1f1f' }}>
+            <div className="flex items-center gap-2">
+              <div className="w-1.5 h-1.5 rounded-full bg-green-400 flex-shrink-0"></div>
+              <span className="text-xs text-gray-500">Conectado</span>
+            </div>
           </div>
-        </div>
+        )}
 
         {/* Nav */}
-        <nav className="flex-1 px-2 py-3 space-y-0.5">
-          <div className="text-xs font-bold text-gray-600 uppercase tracking-widest px-2 mb-2">Principal</div>
+        <nav className="flex-1 px-2 py-3 space-y-0.5 overflow-hidden">
+          {sideOpen && (
+            <div className="text-xs font-bold text-gray-600 uppercase tracking-widest px-2 mb-2">Principal</div>
+          )}
           {visibleTabs.map(item => (
             <button key={item.id} onClick={() => setTab(item.id)}
-              className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-semibold transition-all text-left
+              title={!sideOpen ? item.label : undefined}
+              className={`w-full flex items-center gap-2.5 rounded-lg text-xs font-semibold transition-all text-left
+                ${sideOpen ? 'px-3 py-2' : 'justify-center px-0 py-2'}
                 ${tab === item.id ? 'shadow-lg' : 'text-gray-500 hover:text-white hover:bg-white/5'}`}
               style={tab === item.id ? { background: BRAND, color: DARK } : {}}>
-              {item.icon}{item.label}
-              {item.id === 'asignados' && (
-                <span className="ml-auto text-xs px-1.5 py-0.5 rounded font-bold"
-                  style={{ background: tab === item.id ? DARK : BRAND, color: tab === item.id ? BRAND : DARK }}>
-                  KEY
-                </span>
+              {item.icon}
+              {sideOpen && (
+                <>
+                  {item.label}
+                  {item.id === 'asignados' && (
+                    <span className="ml-auto text-xs px-1.5 py-0.5 rounded font-bold"
+                      style={{ background: tab === item.id ? DARK : BRAND, color: tab === item.id ? BRAND : DARK }}>
+                      KEY
+                    </span>
+                  )}
+                </>
               )}
             </button>
           ))}
         </nav>
 
         {/* Usuario */}
-        <div className="px-3 py-3 border-t" style={{ borderColor: '#1f1f1f' }}>
-          <div className="flex items-center gap-2 mb-2">
-            <div className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0"
-              style={{ background: BRAND, color: DARK }}>{initial}</div>
-            <div className="overflow-hidden">
-              <div className="text-white text-xs font-medium truncate">{username}</div>
-              <div className="text-gray-600 text-xs truncate">{session.user.email}</div>
+        <div className="border-t" style={{ borderColor: '#1f1f1f' }}>
+          {sideOpen ? (
+            <div className="px-3 py-3">
+              <div className="flex items-center gap-2 mb-2">
+                <div className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0"
+                  style={{ background: BRAND, color: DARK }}>{initial}</div>
+                <div className="overflow-hidden">
+                  <div className="text-white text-xs font-medium truncate">{username}</div>
+                  <div className="text-gray-600 text-xs truncate">{session.user.email}</div>
+                </div>
+              </div>
+              <button onClick={() => supabase.auth.signOut()}
+                className="w-full text-xs text-gray-600 hover:text-red-400 transition-colors flex items-center gap-1.5 px-2 py-1 rounded hover:bg-white/5 text-left">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-3 h-3 flex-shrink-0">
+                  <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/>
+                </svg>
+                Cerrar sesión
+              </button>
             </div>
-          </div>
-          <button onClick={() => supabase.auth.signOut()}
-            className="w-full text-xs text-gray-600 hover:text-red-400 transition-colors flex items-center gap-1.5 px-2 py-1 rounded hover:bg-white/5 text-left">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-3 h-3">
-              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/>
-            </svg>
-            Cerrar sesión
-          </button>
+          ) : (
+            <div className="flex flex-col items-center py-3 gap-2">
+              <div className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold"
+                style={{ background: BRAND, color: DARK }} title={session.user.email}>{initial}</div>
+              <button onClick={() => supabase.auth.signOut()} title="Cerrar sesión"
+                className="text-gray-600 hover:text-red-400 transition-colors">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-3.5 h-3.5">
+                  <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/>
+                </svg>
+              </button>
+            </div>
+          )}
         </div>
       </aside>
 
       {/* MAIN */}
-      <main className="flex-1 overflow-y-auto" style={{ background: '#0f0f0f' }}>
+      <main className="flex-1 overflow-y-auto min-w-0" style={{ background: '#0f0f0f' }}>
         <div className="sticky top-0 z-10 px-6 py-3 flex items-center justify-between border-b"
           style={{ background: '#0a0a0a', borderColor: '#1f1f1f' }}>
           <h1 className="font-bold text-white text-sm uppercase tracking-widest">{NAV.find(n => n.id === tab)?.label}</h1>
