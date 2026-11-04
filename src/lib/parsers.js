@@ -115,10 +115,20 @@ export function normalizeDerivadoLeadRow(row) {
   const nombre = row['Cliente']||row['CLIENTE']||row['Nombre']||''
   if (String(nombre).toUpperCase().includes('NO USAR')) return null
   const origen = (() => {
-    const o = String(row['Origen']||row['origen']||'').toLowerCase()
-    if (o.includes('paso')) return 'De paso'
-    if (o.includes('llamada')||o.includes('entrante')) return 'Llamadas entrantes'
-    return 'Internet'
+    const raw = String(row['Origen']||row['ORIGEN']||row['origen']||'').trim()
+    if (!raw) return null
+    const o = raw.toLowerCase()
+    if (o === 'de paso' || o.includes('paso')) return 'De paso'
+    if (o === 'llamadas entrantes' || o === 'llamada entrante') return 'Llamadas entrantes'
+    if (o === 'entrante') return 'Entrante'
+    if (o === 'internet') return 'Internet'
+    if (o.includes('whatsapp') || o.includes('wpp')) return 'WhatsApp'
+    if (o.includes('mercado')) return 'Mercado Libre'
+    if (o === 'cita vendedor' || o.startsWith('cita')) return 'Cita Vendedor'
+    if (o === 'compra') return 'Compra'
+    if (o === 'saliente') return 'Saliente'
+    // Capitalize first letter of each word for any other value
+    return raw.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ')
   })()
   return {
     nro_tramite:    String(pv),
