@@ -107,11 +107,12 @@ export default function Ventas() {
   async function vincularLead(ventaId, lead) {
     setSaving(true)
     await supabase.from('mkt_ventas').update({
-      lead_id:      lead.id,
-      metodo_match: 'manual',
-      campana_id:   lead.campana_id || null,
+      lead_id:         lead.id,
+      metodo_match:    'manual',
+      campana_id:      lead.campana_id || null,
       lead_origen:     lead.origen || null,
-      lead_sub_origen: lead.sub_origen || null
+      lead_sub_origen: lead.sub_origen || null,
+      lead_canal:      lead.canal || null,
     }).eq('id', ventaId)
     setEditing(null); setLeadSearch(''); setLeadResults([])
     setSaving(false); load()
@@ -121,7 +122,8 @@ export default function Ventas() {
     if (!confirm('¿Desvincular el lead de esta preventa?')) return
     setSaving(true)
     await supabase.from('mkt_ventas').update({
-      lead_id: null, metodo_match: null, lead_origen: null, lead_sub_origen: null
+      lead_id: null, metodo_match: null,
+      lead_origen: null, lead_sub_origen: null, lead_canal: null,
     }).eq('id', ventaId)
     setSaving(false); load()
   }
