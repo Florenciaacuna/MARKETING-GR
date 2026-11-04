@@ -76,16 +76,17 @@ export default function Asignados() {
     supabase.from('mkt_campanas').select('id,codigo,nombre').order('nombre')
       .then(({ data: d }) => setCampanas(d || []))
 
-    // Origenes y sub-origenes (desde leads)
-    supabase.from('mkt_leads').select('origen').not('origen','is',null).limit(2000)
+    // Origenes y sub-origenes desde mkt_ventas (columnas denormalizadas en el cruce)
+    // Así el dropdown muestra solo los valores que realmente tienen ventas asignadas
+    supabase.from('mkt_ventas').select('lead_origen').not('lead_origen','is',null).not('lead_id','is',null)
       .then(({ data: d }) => {
         if (!d) return
-        setOrigenes([...new Set(d.map(r => r.origen).filter(Boolean))].sort())
+        setOrigenes([...new Set(d.map(r => r.lead_origen).filter(Boolean))].sort())
       })
-    supabase.from('mkt_leads').select('sub_origen').not('sub_origen','is',null).limit(2000)
+    supabase.from('mkt_ventas').select('lead_sub_origen').not('lead_sub_origen','is',null).not('lead_id','is',null)
       .then(({ data: d }) => {
         if (!d) return
-        setSubOrigenes([...new Set(d.map(r => r.sub_origen).filter(Boolean))].sort())
+        setSubOrigenes([...new Set(d.map(r => r.lead_sub_origen).filter(Boolean))].sort())
       })
 
     // Canales: desde la columna lead_canal de mkt_ventas (denormalizada en el cruce)
@@ -160,8 +161,9 @@ export default function Asignados() {
   useEffect(() => { loadStats(); loadData() }, [loadStats, loadData])
 
   // ── Cruce DNI → Teléfono → Email ─────────────────────────────────────────
-  async function ejecutarCruce() {
-    setRunning(true); setRunLog(['Iniciando cruce...'])
+  async function ejecutarCruce(modoReset = false) {
+    setRunning(true)
+    setRunLog([modoReset ? 'Iniciando cruce COMPLETO (reset — se borrarán matches sin coincidencia)...' : 'Iniciando cruce incremental (conserva matches existentes)...'])
     const log = m => setRunLog(prev => [...prev, m])
 
     log('Cargando leads...')
@@ -216,17 +218,33 @@ export default function Asignados() {
       if (!lead && vD     && byDNI.has(vD))     { lead = byDNI.get(vD);     metodo = 'dni';      mD++ }
       if (!lead) { for (const p of vPhones) if (byPhone.has(p)) { lead = byPhone.get(p); metodo = 'telefono'; mT++; break } }
       if (!lead && vEmail && byEmail.has(vEmail)) { lead = byEmail.get(vEmail); metodo = 'email'; mE++ }
-      if (!lead) sinM++
-
-      updates.push({
-        id:              v.id,
-        lead_id:         lead ? lead.id          : null,
-        campana_id:      lead ? lead.campana_id  : null,
-        metodo_match:    metodo,
-        lead_origen:     lead ? lead.origen      : null,
-        lead_sub_origen: lead ? lead.sub_origen  : null,
-        lead_canal:      lead ? lead.canal       : null,
-      })
+      if (lead) {
+        // Match encontrado — siempre actualizar con los datos del lead
+        updates.push({
+          id:              v.id,
+          lead_id:         lead.id,
+          campana_id:      lead.campana_id,
+          metodo_match:    metodo,
+          lead_origen:     lead.origen,
+          lead_sub_origen: lead.sub_origen,
+          lead_canal:      lead.canal,
+        })
+      } else {
+        sinM++
+        if (modoReset) {
+          // Modo reset: borrar el match anterior si no encontró coincidencia nueva
+          updates.push({
+            id:              v.id,
+            lead_id:         null,
+            campana_id:      null,
+            metodo_match:    null,
+            lead_origen:     null,
+            lead_sub_origen: null,
+            lead_canal:      null,
+          })
+        }
+        // Modo normal: NO agregar al batch → el match anterior en BD se conserva
+      }
     }
     log('Vínculos manuales respetados: ' + protegidas)
     log('Matches — DNI: ' + mD + ' | Teléfono: ' + mT + ' | Email: ' + mE + ' | Sin match: ' + sinM)
@@ -275,9 +293,17 @@ export default function Asignados() {
       {/* Panel de cruce */}
       <div className="card">
         <div className="flex items-start justify-between mb-4">
-          <button onClick={ejecutarCruce} disabled={running} className="btn-primary">
-            {running ? 'Ejecutando...' : 'Ejecutar cruce'}
-          </button>
+          <div className="flex gap-2 flex-wrap">
+            <button onClick={() => ejecutarCruce(false)} disabled={running} className="btn-primary">
+              {running ? 'Ejecutando...' : 'Ejecutar cruce'}
+            </button>
+            <button onClick={() => ejecutarCruce(true)} disabled={running}
+              className="text-xs font-semibold px-3 py-2 rounded-lg transition-colors"
+              style={{ background:'#1f1f1f', color:'#9ca3af', border:'1px solid #3a2a2a' }}
+              title="Borra TODOS los matches actuales y vuelve a cruzar desde cero">
+              Resetear y recruzar
+            </button>
+          </div>
         </div>
 
         {stats && (
