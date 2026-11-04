@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { supabase } from '../lib/supabase'
 
 export function useDashboard() {
@@ -16,6 +16,7 @@ export function useDashboard() {
   const [campLeads,     setCampLeads]     = useState([])
   const [origenLeads,   setOrigenLeads]   = useState([])
   const [loading,       setLoading]       = useState(true)
+  const [loadingCharts, setLoadingCharts] = useState(true)
 
   const toggleMarca    = m => setMarcaFiltro(p => p.includes(m) ? p.filter(x=>x!==m) : [...p,m])
   const toggleRubro    = r => setRubroFiltro(p => p.includes(r) ? p.filter(x=>x!==r) : [...p,r])
@@ -23,6 +24,7 @@ export function useDashboard() {
 
   const load = useCallback(async () => {
     setLoading(true)
+    setLoadingCharts(true)
 
     // ── Helper para filtros compartidos de mkt_ventas ──────────────────────
     const applyV = q => {
@@ -33,9 +35,28 @@ export function useDashboard() {
       return q
     }
 
-    // ── Preparar queries independientes ────────────────────────────────────
+    // ── FASE 1: KPIs — sólo count queries (muy rápidas, no traen filas) ───
+    // El usuario ve los números en <500ms antes de que carguen los gráficos
     let leadsCountQ = supabase.from('mkt_leads').select('*', { count:'exact', head:true })
     if (campanaFiltro) leadsCountQ = leadsCountQ.eq('campana_id', campanaFiltro)
+
+    const [
+      { count: totalVentas },
+      { count: ventasConLead },
+      { count: totalLeads },
+      { count: totalEntregas },
+    ] = await Promise.all([
+      applyV(supabase.from('mkt_ventas').select('*', { count:'exact', head:true })),
+      applyV(supabase.from('mkt_ventas').select('*', { count:'exact', head:true })).not('lead_id','is',null),
+      leadsCountQ,
+      applyV(supabase.from('mkt_entregas').select('*', { count:'exact', head:true })).not('venta_id','is',null),
+    ])
+
+    setKpis({ totalVentas, ventasConLead, totalLeads, totalEntregas })
+    setLoading(false)   // ← KPIs listos: la UI muestra los números enseguida
+
+    // ── FASE 2: Gráficos — queries con filas (un poco más lentas) ─────────
+    // Mientras llegan, el Dashboard muestra skeletons en lugar de vacíos
 
     let histQ = supabase.from('mkt_ventas').select('fecha,lead_id').not('fecha','is',null).limit(5000)
     if (marcaFiltro.length) histQ = histQ.in('marca', marcaFiltro)
@@ -47,38 +68,25 @@ export function useDashboard() {
     if (marcaFiltro.length) vCampQ = vCampQ.in('marca', marcaFiltro)
     if (campanaFiltro)      vCampQ = vCampQ.eq('campana_id', campanaFiltro)
 
-    let lCampQ = supabase.from('mkt_leads').select('campana_id').not('campana_id','is',null).limit(5000)
-    if (campanaFiltro) lCampQ = lCampQ.eq('campana_id', campanaFiltro)
+    const campPrm = campanaFiltro ? { p_campana_id: campanaFiltro } : {}
 
-    // ── ÚNICO Promise.all — las 10 queries en paralelo ────────────────────
-    // (antes eran 3 tandas secuenciales, esto elimina 2 round-trips extra)
     const [
-      { count: totalVentas },
-      { count: ventasConLead },
-      { count: totalLeads },
-      { count: totalEntregas },
       { data: vMarca },
       { data: vHist },
       origenResult,
       { data: vCampRes },
       { data: campListRes },
-      { data: lCampRes },
+      lCampResult,
     ] = await Promise.all([
-      applyV(supabase.from('mkt_ventas').select('*', { count:'exact', head:true })),
-      applyV(supabase.from('mkt_ventas').select('*', { count:'exact', head:true })).not('lead_id','is',null),
-      leadsCountQ,
-      applyV(supabase.from('mkt_entregas').select('*', { count:'exact', head:true })).not('venta_id','is',null),
       applyV(supabase.from('mkt_ventas').select('marca,lead_id')).limit(5000),
       histQ,
       // RPC: si no existe en Supabase, devuelve [] sin romper la carga
-      supabase.rpc('get_leads_origen_stats', campanaFiltro ? { p_campana_id: campanaFiltro } : {}),
+      supabase.rpc('get_leads_origen_stats', campPrm),
       vCampQ,
       supabase.from('mkt_campanas').select('id,nombre,marca,rubro'),
-      lCampQ,
+      // RPC: reemplaza la query con LIMIT 5000 que subestimaba leads con 40k registros
+      supabase.rpc('get_leads_por_campana', campPrm),
     ])
-
-    // ── KPIs ────────────────────────────────────────────────────────────────
-    setKpis({ totalVentas, ventasConLead, totalLeads, totalEntregas })
 
     // ── Origen — manejo de error si RPC no fue creado aún ──────────────────
     const origenRPC = origenResult.error ? [] : (origenResult.data || [])
@@ -86,7 +94,7 @@ export function useDashboard() {
       console.warn('[Dashboard] RPC get_leads_origen_stats no disponible:', origenResult.error.message)
     }
 
-    // ── Por marca ───────────────────────────────────────────────────────────
+    // ── Por marca — base (ventas y con_lead) ────────────────────────────────
     const mMap = {}
     ;(vMarca || []).forEach(v => {
       const m = v.marca || 'Sin marca'
@@ -94,9 +102,6 @@ export function useDashboard() {
       mMap[m].ventas++
       if (v.lead_id) mMap[m].conLead++
     })
-    setPorMarca(Object.values(mMap)
-      .map(r => ({ ...r, conv: r.ventas > 0 ? r.conLead * 100 / r.ventas : 0 }))
-      .sort((a,b) => b.ventas - a.ventas))
 
     // ── Histórico — últimos 12 meses ────────────────────────────────────────
     const last12 = []
@@ -127,28 +132,52 @@ export function useDashboard() {
         .map(([nombre, leads]) => ({ nombre, leads, pct: oTotal ? Math.round(leads * 100 / oTotal) : 0 }))
     )
 
-    // ── Leads por campaña ───────────────────────────────────────────────────
+    // ── Leads por campaña + leads por marca ─────────────────────────────────
+    // lCampResult viene del RPC get_leads_por_campana → datos exactos para los 40k leads
+    // Si el RPC no existe aún, lMap queda vacío (leads=0 en la tabla, no es crítico)
     const cMap = {}; (campListRes||[]).forEach(c => { cMap[c.id] = c })
-    const lMap = {}; (lCampRes||[]).forEach(l => { lMap[l.campana_id] = (lMap[l.campana_id] || 0) + 1 })
     const vMap = {}; (vCampRes||[]).forEach(v => { vMap[v.campana_id] = (vMap[v.campana_id] || 0) + 1 })
 
-    const result = []
+    let lMap = {}
+    if (!lCampResult.error && lCampResult.data) {
+      lCampResult.data.forEach(r => { lMap[r.campana_id] = Number(r.total) })
+    } else {
+      console.warn('[Dashboard] RPC get_leads_por_campana no disponible. Ejecutar SQL de setup.')
+    }
+
+    // Construir campLeads y al mismo tiempo agregar leads por marca
+    const campResult = []
+    const lMarcaMap  = {}
     Object.entries(vMap).forEach(([id, ventas]) => {
       const c = cMap[id]
-      if (c) result.push({ id, nombre:c.nombre, marca:c.marca, rubro:c.rubro, leads:lMap[id]||0, ventas })
+      if (c) {
+        const leads = lMap[id] || 0
+        campResult.push({ id, nombre:c.nombre, marca:c.marca, rubro:c.rubro, leads, ventas })
+        const m = c.marca || 'Sin marca'
+        lMarcaMap[m] = (lMarcaMap[m] || 0) + leads
+      }
     })
-    setCampLeads(result.sort((a,b) => b.ventas - a.ventas))
+    setCampLeads(campResult.sort((a,b) => b.ventas - a.ventas))
 
-    setLoading(false)
+    // Actualizar porMarca con leads correctos (desde campañas)
+    setPorMarca(
+      Object.values(mMap)
+        .map(r => ({ ...r, leads: lMarcaMap[r.marca] || 0, conv: r.ventas > 0 ? r.conLead * 100 / r.ventas : 0 }))
+        .sort((a,b) => b.ventas - a.ventas)
+    )
+
+    setLoadingCharts(false)
   }, [desde, hasta, marcaFiltro, rubroFiltro, campanaFiltro])
 
   useEffect(() => { load() }, [load])
 
+  // Lista de campañas activas (se carga una sola vez)
   useEffect(() => {
     supabase.from('mkt_campanas').select('id,codigo,nombre,marca,rubro').eq('activo', true).order('nombre')
       .then(({ data }) => setCampanaList(data || []))
   }, [])
 
+  // Detalle de una campaña específica
   useEffect(() => {
     if (!campanaFiltro) { setCampDetalle(null); return }
     setLoadingDet(true)
@@ -168,14 +197,19 @@ export function useDashboard() {
     })
   }, [campanaFiltro])
 
+  // campFiltered memoizado para evitar recalcular en cada render
+  const campFiltered = useMemo(
+    () => rubroFiltro.length > 0 ? campLeads.filter(c => rubroFiltro.includes(c.rubro)) : campLeads,
+    [rubroFiltro, campLeads]
+  )
+
   return {
     desde, setDesde, hasta, setHasta,
     marcaFiltro, setMarcaFiltro, toggleMarca,
     rubroFiltro, setRubroFiltro, toggleRubro,
     campanaFiltro, setCampanaFiltro, campanaList,
-    limpiarFiltros, loading, loadingDet,
+    limpiarFiltros, loading, loadingDet, loadingCharts,
     kpis, porMarca, historico, campLeads, origenLeads,
-    campDetalle,
-    campFiltered: rubroFiltro.length > 0 ? campLeads.filter(c => rubroFiltro.includes(c.rubro)) : campLeads,
+    campDetalle, campFiltered,
   }
 }
