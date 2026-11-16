@@ -151,11 +151,14 @@ export default function Asignados() {
     if (filters.campana_id === '__con__') q = q.not('campana_id','is',null)
     else if (filters.campana_id)          q = q.eq('campana_id', filters.campana_id)
 
-    // Origen, sub-origen y canal: busca en la columna denormalizada de mkt_ventas
-    // Si los campos están vacíos, hacer clic en "Reparar campos" para repoblarlos
-    if (filters.origen)     q = q.eq('lead_origen', filters.origen)
-    if (filters.sub_origen) q = q.eq('lead_sub_origen', filters.sub_origen)
-    if (filters.canales?.length > 0) q = q.in('lead_canal', filters.canales)
+    // Origen, sub-origen y canal — ilike para tolerar diferencias de mayúsculas
+    if (filters.origen)     q = q.ilike('lead_origen',     filters.origen)
+    if (filters.sub_origen) q = q.ilike('lead_sub_origen', filters.sub_origen)
+    if (filters.canales?.length > 0) {
+      // ilike case-insensitive para cada canal seleccionado
+      const canalOr = filters.canales.map(c => `lead_canal.ilike.${c}`).join(',')
+      q = q.or(canalOr)
+    }
 
     // Vendedor y Marca — útiles en ambas pestañas
     if (filters.vendedor) q = q.ilike('vendedor', '%' + filters.vendedor + '%')
@@ -163,10 +166,10 @@ export default function Asignados() {
 
     const { data: rows, error } = await q
     if (error) {
-      console.error('[Asignados] Error cargando datos:', error.message)
-      // Reintentar sin columnas opcionales si el error es de columna inexistente
+      console.error('[Asignados] Error en query:', error.message, '| Código:', error.code, '| Detalles:', error.details)
       setData([])
     } else {
+      console.log('[Asignados] Registros obtenidos:', rows?.length, '| Filtros activos:', JSON.stringify({ origen: filters.origen, sub_origen: filters.sub_origen, canales: filters.canales, vendedor: filters.vendedor, marca: filters.marca }))
       setData(rows || [])
     }
     setLoading(false)
