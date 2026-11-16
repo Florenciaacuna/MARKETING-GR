@@ -52,13 +52,16 @@ export default function Asignados() {
   const [page,           setPage]           = useState(0)
   const [filters,        setFilters]        = useState({
     search: '', tipo: '', campana_id: '', mes: '',
-    origen: '', sub_origen: '', canales: []
+    origen: '', sub_origen: '', canales: [],
+    vendedor: '', marca: ''
   })
   const [meses,          setMeses]          = useState([])
   const [campanas,       setCampanas]       = useState([])
   const [origenes,       setOrigenes]       = useState([])
   const [subOrigenes,    setSubOrigenes]    = useState([])
   const [canalesList,    setCanalesList]    = useState([])
+  const [vendedores,     setVendedores]     = useState([])
+  const [marcas,         setMarcas]         = useState([])
   const [editing,        setEditing]        = useState(null)
   const [saving,         setSaving]         = useState(false)
 
@@ -76,26 +79,34 @@ export default function Asignados() {
     supabase.from('mkt_campanas').select('id,codigo,nombre').order('nombre')
       .then(({ data: d }) => setCampanas(d || []))
 
-    // Origenes y sub-origenes desde mkt_ventas (columnas denormalizadas en el cruce)
-    // Así el dropdown muestra solo los valores que realmente tienen ventas asignadas
-    supabase.from('mkt_ventas').select('lead_origen').not('lead_origen','is',null).not('lead_id','is',null)
+    // Origenes, sub-origenes y canales: desde mkt_leads directamente (fuente de verdad)
+    // Así los dropdowns siempre muestran valores aunque lead_canal/lead_origen estén vacíos
+    supabase.from('mkt_leads').select('origen').not('origen','is',null)
       .then(({ data: d }) => {
         if (!d) return
-        setOrigenes([...new Set(d.map(r => r.lead_origen).filter(Boolean))].sort())
+        setOrigenes([...new Set(d.map(r => r.origen).filter(Boolean))].sort())
       })
-    supabase.from('mkt_ventas').select('lead_sub_origen').not('lead_sub_origen','is',null).not('lead_id','is',null)
+    supabase.from('mkt_leads').select('sub_origen').not('sub_origen','is',null)
       .then(({ data: d }) => {
         if (!d) return
-        setSubOrigenes([...new Set(d.map(r => r.lead_sub_origen).filter(Boolean))].sort())
+        setSubOrigenes([...new Set(d.map(r => r.sub_origen).filter(Boolean))].sort())
+      })
+    supabase.from('mkt_leads').select('canal').not('canal','is',null)
+      .then(({ data: d }) => {
+        if (!d) return
+        setCanalesList([...new Set(d.map(r => r.canal).filter(Boolean))].sort())
       })
 
-    // Canales: desde la columna lead_canal de mkt_ventas (denormalizada en el cruce)
-    // Si la columna no existe todavía, el .select falla silenciosamente y queda vacío
-    supabase.from('mkt_ventas').select('lead_canal')
-      .not('lead_canal','is',null).not('lead_id','is',null)
+    // Vendedores y Marcas — disponibles en TODAS las preventas (con y sin lead)
+    supabase.from('mkt_ventas').select('vendedor').not('vendedor','is',null)
       .then(({ data: d }) => {
         if (!d) return
-        setCanalesList([...new Set(d.map(r => r.lead_canal).filter(Boolean))].sort())
+        setVendedores([...new Set(d.map(r => r.vendedor).filter(Boolean))].sort())
+      })
+    supabase.from('mkt_ventas').select('marca').not('marca','is',null)
+      .then(({ data: d }) => {
+        if (!d) return
+        setMarcas([...new Set(d.map(r => r.marca).filter(Boolean))].sort())
       })
   }, [])
 
@@ -140,12 +151,15 @@ export default function Asignados() {
     if (filters.campana_id === '__con__') q = q.not('campana_id','is',null)
     else if (filters.campana_id)          q = q.eq('campana_id', filters.campana_id)
 
-    // Origen y sub-origen: columnas denormalizadas en mkt_ventas
-    if (filters.origen)     q = q.eq('lead_origen',     filters.origen)
+    // Origen, sub-origen y canal: busca en la columna denormalizada de mkt_ventas
+    // Si los campos están vacíos, hacer clic en "Reparar campos" para repoblarlos
+    if (filters.origen)     q = q.eq('lead_origen', filters.origen)
     if (filters.sub_origen) q = q.eq('lead_sub_origen', filters.sub_origen)
-
-    // Canal: columna lead_canal denormalizada (guardada en el cruce)
     if (filters.canales?.length > 0) q = q.in('lead_canal', filters.canales)
+
+    // Vendedor y Marca — útiles en ambas pestañas
+    if (filters.vendedor) q = q.ilike('vendedor', '%' + filters.vendedor + '%')
+    if (filters.marca)    q = q.ilike('marca',    '%' + filters.marca    + '%')
 
     const { data: rows, error } = await q
     if (error) {
@@ -247,12 +261,16 @@ export default function Asignados() {
       }
     }
     log('Vínculos manuales respetados: ' + protegidas)
+    const conOrigen = updates.filter(u => u.lead_origen).length
+    const conCanal  = updates.filter(u => u.lead_canal).length
     log('Matches — DNI: ' + mD + ' | Teléfono: ' + mT + ' | Email: ' + mE + ' | Sin match: ' + sinM)
+    log('Datos del lead — Con origen: ' + conOrigen + '/' + updates.length + ' | Con canal: ' + conCanal + '/' + updates.length)
 
     log('Guardando...')
+    let errores = 0
     for (let i = 0; i < updates.length; i += 100) {
       const batch = updates.slice(i, i+100)
-      await Promise.all(batch.map(u => supabase.from('mkt_ventas').update({
+      const results = await Promise.all(batch.map(u => supabase.from('mkt_ventas').update({
         lead_id:         u.lead_id,
         campana_id:      u.campana_id,
         metodo_match:    u.metodo_match,
@@ -260,9 +278,82 @@ export default function Asignados() {
         lead_sub_origen: u.lead_sub_origen,
         lead_canal:      u.lead_canal,
       }).eq('id', u.id)))
+      errores += results.filter(r => r.error).length
+      if (results.some(r => r.error)) {
+        const firstErr = results.find(r => r.error)
+        log('⚠ Error en batch ' + (i/100+1) + ': ' + firstErr.error.message)
+      }
     }
-    log('Cruce completado. ' + updates.length + ' preventas actualizadas.')
+    log('Cruce completado. ' + updates.length + ' preventas actualizadas.' + (errores > 0 ? ' (' + errores + ' errores)' : ''))
     setRunning(false); loadStats(); loadData()
+  }
+
+  // ── Reparar columnas denormalizadas ─────────────────────────────────────
+  // Sincroniza lead_origen / lead_sub_origen / lead_canal desde mkt_leads
+  // sin re-calcular los matches existentes
+  async function repararCampos() {
+    setRunning(true)
+    setRunLog(['Reparando columnas de origen/canal...'])
+    const log = m => setRunLog(prev => [...prev, m])
+
+    // Cargar preventas con lead asignado
+    let ventas = []; let from = 0
+    while (true) {
+      const { data: batch } = await supabase.from('mkt_ventas')
+        .select('id,lead_id,lead_origen,lead_sub_origen,lead_canal')
+        .not('lead_id','is',null)
+        .range(from, from+999)
+      if (!batch || batch.length === 0) break
+      ventas = ventas.concat(batch)
+      if (batch.length < 1000) break
+      from += 1000
+    }
+    log(ventas.length + ' preventas con lead encontradas')
+
+    // Cargar todos los leads
+    let leads = []; from = 0
+    while (true) {
+      const { data: batch } = await supabase.from('mkt_leads')
+        .select('id,origen,sub_origen,canal')
+        .range(from, from+999)
+      if (!batch || batch.length === 0) break
+      leads = leads.concat(batch)
+      if (batch.length < 1000) break
+      from += 1000
+    }
+    const leadMap = new Map(leads.map(l => [l.id, l]))
+    log(leads.length + ' leads cargados')
+
+    // Identificar las que tienen columnas vacías
+    const aReparar = ventas.filter(v => {
+      const lead = leadMap.get(v.lead_id)
+      if (!lead) return false
+      return !v.lead_origen || !v.lead_canal
+    })
+    log(aReparar.length + ' preventas necesitan reparación')
+
+    if (aReparar.length === 0) {
+      log('✓ Todos los campos ya están completos. Los filtros deberían funcionar.')
+      setRunning(false); return
+    }
+
+    // Actualizar en batches
+    let ok = 0, err = 0
+    for (let i = 0; i < aReparar.length; i += 100) {
+      const batch = aReparar.slice(i, i+100)
+      const results = await Promise.all(batch.map(v => {
+        const lead = leadMap.get(v.lead_id)
+        return supabase.from('mkt_ventas').update({
+          lead_origen:     lead.origen     || null,
+          lead_sub_origen: lead.sub_origen || null,
+          lead_canal:      lead.canal      || null,
+        }).eq('id', v.id)
+      }))
+      ok  += results.filter(r => !r.error).length
+      err += results.filter(r =>  r.error).length
+    }
+    log('✓ Reparación completada: ' + ok + ' actualizadas, ' + err + ' errores')
+    setRunning(false); loadData()
   }
 
   // ── Guardado de edición inline ───────────────────────────────────────────
@@ -285,7 +376,8 @@ export default function Asignados() {
 
   const hayFiltros = filters.search || filters.tipo || filters.campana_id ||
                      filters.mes || filters.origen || filters.sub_origen ||
-                     (filters.canales||[]).length > 0
+                     (filters.canales||[]).length > 0 ||
+                     filters.vendedor || filters.marca
 
   return (
     <div className="space-y-5">
@@ -302,6 +394,12 @@ export default function Asignados() {
               style={{ background:'#1f1f1f', color:'#9ca3af', border:'1px solid #3a2a2a' }}
               title="Borra TODOS los matches actuales y vuelve a cruzar desde cero">
               Resetear y recruzar
+            </button>
+            <button onClick={repararCampos} disabled={running}
+              className="text-xs font-semibold px-3 py-2 rounded-lg transition-colors"
+              style={{ background:'#1a1f00', color:'#B5E000', border:'1px solid rgba(181,224,0,0.3)' }}
+              title="Rellena los campos de origen/canal vacíos en las preventas ya vinculadas, sin re-calcular matches">
+              Reparar campos
             </button>
           </div>
         </div>
@@ -373,7 +471,7 @@ export default function Asignados() {
 
           <div className="filter-sep"/>
 
-          {/* Búsqueda */}
+          {/* Búsqueda — disponible siempre */}
           <input className="input-dark" style={{ width: 200 }} placeholder="Buscar cliente, DNI, PV..."
             value={filters.search} onChange={e => sf('search', e.target.value)} />
 
@@ -387,71 +485,88 @@ export default function Asignados() {
             <option>PLAN AHORRO</option>
           </select>
 
-          <div className="filter-sep"/>
-
-          {/* Campaña */}
-          <select className="input-dark" style={{ width:200 }}
-            value={filters.campana_id === '__con__' ? '' : (filters.campana_id||'')}
-            onChange={e => sf('campana_id', e.target.value)}>
-            <option value="">Campaña: todas</option>
-            {campanas.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
-          </select>
-          <label className="flex items-center gap-2 text-xs text-gray-400 cursor-pointer flex-shrink-0">
-            <input type="checkbox"
-              checked={filters.campana_id === '__con__'}
-              onChange={e => sf('campana_id', e.target.checked ? '__con__' : '')}
-              className="accent-[#B5E000]" style={{ width:14, height:14 }} />
-            Con campaña
-          </label>
-
-          <div className="filter-sep"/>
-
-          {/* Origen */}
-          <select className="input-dark" style={{ width: 190 }} value={filters.origen} onChange={e => sf('origen', e.target.value)}>
-            <option value="">Origen: todos</option>
-            <option value="Internet">Internet</option>
-            <option value="De paso">De paso</option>
-            <option value="Llamadas entrantes">Llamadas entrantes</option>
-            <option value="Evento">Evento</option>
-            <option value="WhatsApp">WhatsApp</option>
-            <option value="Mercado Libre">Mercado Libre</option>
-            {origenes.filter(o => !['Internet','De paso','Llamadas entrantes','Evento','WhatsApp','Mercado Libre'].includes(o)).map(o => (
-              <option key={o} value={o}>{o}</option>
-            ))}
+          {/* Vendedor — disponible en ambas pestañas */}
+          <select className="input-dark" style={{ width: 180 }} value={filters.vendedor} onChange={e => sf('vendedor', e.target.value)}>
+            <option value="">Vendedor: todos</option>
+            {vendedores.map(v => <option key={v} value={v}>{v}</option>)}
           </select>
 
-          {/* Sub-origen */}
-          <select className="input-dark" style={{ width: 190 }} value={filters.sub_origen} onChange={e => sf('sub_origen', e.target.value)}>
-            <option value="">Sub-origen: todos</option>
-            {subOrigenes.map(o => <option key={o} value={o}>{o}</option>)}
-          </select>
-
-          <div className="filter-sep"/>
-
-          {/* Canal — multi-select, filtra por lead_canal (denormalizado en cruce) */}
-          {canalesList.length > 0 && (
-            <div className="relative flex-shrink-0">
-              <select className="input-dark" style={{ width:170 }}
-                value=""
-                onChange={e => { const v=e.target.value; if(v && !(filters.canales||[]).includes(v)) sf('canales',[...(filters.canales||[]),v]) }}>
-                <option value="">Canal...</option>
-                {canalesList.filter(c => !(filters.canales||[]).includes(c)).map(c => <option key={c} value={c}>{c}</option>)}
-              </select>
-            </div>
+          {/* Marca — disponible en ambas pestañas */}
+          {marcas.length > 0 && (
+            <select className="input-dark" style={{ width: 150 }} value={filters.marca} onChange={e => sf('marca', e.target.value)}>
+              <option value="">Marca: todas</option>
+              {marcas.map(m => <option key={m} value={m}>{m}</option>)}
+            </select>
           )}
-          {(filters.canales||[]).map(c => (
-            <span key={c} className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-lg flex-shrink-0"
-              style={{ background:'#1a2e00', color:'#B5E000', border:'1px solid rgba(181,224,0,0.2)' }}>
-              {c}
-              <button onClick={() => sf('canales',(filters.canales||[]).filter(x=>x!==c))} style={{ color:'#6b7280' }}>✕</button>
-            </span>
-          ))}
+
+          {/* Filtros solo para tab Digital (Lead asignado) */}
+          {tab === 'digital' && (
+            <>
+              <div className="filter-sep"/>
+
+              {/* Campaña */}
+              <select className="input-dark" style={{ width:200 }}
+                value={filters.campana_id === '__con__' ? '' : (filters.campana_id||'')}
+                onChange={e => sf('campana_id', e.target.value)}>
+                <option value="">Campaña: todas</option>
+                {campanas.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+              </select>
+              <label className="flex items-center gap-2 text-xs text-gray-400 cursor-pointer flex-shrink-0">
+                <input type="checkbox"
+                  checked={filters.campana_id === '__con__'}
+                  onChange={e => sf('campana_id', e.target.checked ? '__con__' : '')}
+                  className="accent-[#B5E000]" style={{ width:14, height:14 }} />
+                Con campaña
+              </label>
+
+              <div className="filter-sep"/>
+
+              {/* Origen */}
+              <select className="input-dark" style={{ width: 190 }} value={filters.origen} onChange={e => sf('origen', e.target.value)}>
+                <option value="">Origen: todos</option>
+                <option value="Internet">Internet</option>
+                <option value="De paso">De paso</option>
+                <option value="Llamadas entrantes">Llamadas entrantes</option>
+                <option value="Evento">Evento</option>
+                <option value="WhatsApp">WhatsApp</option>
+                <option value="Mercado Libre">Mercado Libre</option>
+                {origenes.filter(o => !['Internet','De paso','Llamadas entrantes','Evento','WhatsApp','Mercado Libre'].includes(o)).map(o => (
+                  <option key={o} value={o}>{o}</option>
+                ))}
+              </select>
+
+              {/* Sub-origen */}
+              <select className="input-dark" style={{ width: 190 }} value={filters.sub_origen} onChange={e => sf('sub_origen', e.target.value)}>
+                <option value="">Sub-origen: todos</option>
+                {subOrigenes.map(o => <option key={o} value={o}>{o}</option>)}
+              </select>
+
+              {/* Canal — multi-select */}
+              {canalesList.length > 0 && (
+                <div className="relative flex-shrink-0">
+                  <select className="input-dark" style={{ width:170 }}
+                    value=""
+                    onChange={e => { const v=e.target.value; if(v && !(filters.canales||[]).includes(v)) sf('canales',[...(filters.canales||[]),v]) }}>
+                    <option value="">Canal...</option>
+                    {canalesList.filter(c => !(filters.canales||[]).includes(c)).map(c => <option key={c} value={c}>{c}</option>)}
+                  </select>
+                </div>
+              )}
+              {(filters.canales||[]).map(c => (
+                <span key={c} className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-lg flex-shrink-0"
+                  style={{ background:'#1a2e00', color:'#B5E000', border:'1px solid rgba(181,224,0,0.2)' }}>
+                  {c}
+                  <button onClick={() => sf('canales',(filters.canales||[]).filter(x=>x!==c))} style={{ color:'#6b7280' }}>✕</button>
+                </span>
+              ))}
+            </>
+          )}
 
           {hayFiltros && (
             <>
               <div className="filter-sep"/>
               <button
-                onClick={() => { setFilters({ search:'', tipo:'', campana_id:'', mes:'', origen:'', sub_origen:'', canales:[] }); setPage(0) }}
+                onClick={() => { setFilters({ search:'', tipo:'', campana_id:'', mes:'', origen:'', sub_origen:'', canales:[], vendedor:'', marca:'' }); setPage(0) }}
                 className="btn-ghost text-xs flex-shrink-0">
                 Limpiar filtros
               </button>
@@ -464,6 +579,8 @@ export default function Asignados() {
           Mostrando <span>{data.length}</span> registros (página {page + 1})
           {filters.mes        && <span> — Mes: <span>{new Date(filters.mes+'-15').toLocaleString('es-AR',{month:'long',year:'numeric'})}</span></span>}
           {filters.tipo       && <span> — Tipo: <span>{filters.tipo}</span></span>}
+          {filters.vendedor   && <span> — Vendedor: <span>{filters.vendedor}</span></span>}
+          {filters.marca      && <span> — Marca: <span>{filters.marca}</span></span>}
           {filters.origen     && <span> — Origen: <span>{filters.origen}</span></span>}
           {filters.sub_origen && <span> — Sub-origen: <span>{filters.sub_origen}</span></span>}
           {(filters.canales||[]).length > 0 && <span> — Canal: <span>{filters.canales.join(', ')}</span></span>}
