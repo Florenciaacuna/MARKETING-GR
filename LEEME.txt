@@ -1,0 +1,3 @@
+Estos archivos son los mismos pasos que ya corriste en Supabase (marketing-cruces), con nombres ordenados.
+NO hace falta volver a correrlos, salvo el 7_tiempo_maximo.sql que es nuevo.
+Si algún día armás la base desde cero, se corren en orden 1 → 7.
